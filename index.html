@@ -947,7 +947,8 @@ function fail(e) {
 
 let wakeLockBusy = false;
 async function syncWakeLock() {
-  const want = !!audio && (live || mode === 'ptt') && document.visibilityState === 'visible';
+  // Skärmen hålls vaken så länge sidan är öppen och syns, oavsett om rösten är på
+  const want = document.visibilityState === 'visible';
   if (wakeLockBusy || !navigator.wakeLock) return;
   wakeLockBusy = true;
   try {
@@ -1137,6 +1138,9 @@ document.addEventListener('visibilitychange', () => {
   syncWakeLock();
 });
 
+// Vissa webbläsare (Safari) vill ha ett tryck innan skärmen får hållas vaken; försök vid start och vid varje tryck
+syncWakeLock();
+document.addEventListener('pointerdown', () => { if (!wakeLock) syncWakeLock(); });
 selectPreset('demon');
 setInterval(gateLoop, 15);
 meterLoop();
