@@ -203,7 +203,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--candle); ou
               <button type="button" data-mode="gradient" aria-pressed="false">Tona</button>
               <button type="button" data-mode="static" aria-pressed="false">Fast</button>
             </div>
-            <div class="ctl"><label for="labSpeed">Hastighet (Tuya-värde) <output id="labSpeedOut"></output></label><input id="labSpeed" type="range" min="0" max="100" step="1" value="20"></div>
+            <div class="ctl"><label for="labSpeed">Hastighet (Tuya-värde) <output id="labSpeedOut"></output></label><input id="labSpeed" type="range" min="0" max="100" step="1" value="100"></div>
             <div class="setup-btns">
               <button type="button" id="labTry" class="testbtn">Testa flimmer</button>
               <button type="button" id="labRead" class="linkbtn">Läs av lampan</button>
@@ -595,22 +595,22 @@ async function playSfx(s, btn) {
 }
 
 // ---------- Ljus: smarta lampor via proxyn i lampor/worker.js ----------
-// Scenernas hastighet (0–100) är en gissning tills lamporna finns på plats.
+// Scenhastighet 0–100: högre = snabbare (100 är max, uppmätt på Cleverio).
 const LIGHTS = [
   { id: 'varm',    name: 'Varmt',     desc: 'Vanligt ljus',      a: { type: 'white', v: 0.8, temp: 0.1 } },
   { id: 'rod',     name: 'Blodrött',  desc: 'Djupt rött',        a: { type: 'color', h: 0, s: 1, v: 1 } },
   { id: 'gron',    name: 'Giftgrönt', desc: 'Sjukligt grönt',    a: { type: 'color', h: 100, s: 1, v: 0.9 } },
   { id: 'lila',    name: 'Spöklila',  desc: 'Kallt och blekt',   a: { type: 'color', h: 275, s: 0.7, v: 0.7 } },
   { id: 'mane',    name: 'Månsken',   desc: 'Svagt blått',       a: { type: 'color', h: 220, s: 0.6, v: 0.25 } },
-  { id: 'flimmer', name: 'Flimmer',   desc: 'Lampan krånglar',   a: { type: 'scene', num: 1, mode: 'jump', speed: 20, units: [
+  { id: 'flimmer', name: 'Flimmer',   desc: 'Lampan krånglar',   a: { type: 'scene', num: 1, mode: 'jump', speed: 100, units: [
       { h: 35, s: 0.3, v: 1 }, { h: 35, s: 0.3, v: 0.05 }, { h: 35, s: 0.3, v: 0.8 }, { h: 35, s: 0.3, v: 0.02 }, { h: 35, s: 0.3, v: 1 }, { h: 35, s: 0.3, v: 0.1 } ] } },
-  { id: 'puls',    name: 'Puls',      desc: 'Rött som andas',    a: { type: 'scene', num: 2, mode: 'gradient', speed: 60, units: [{ h: 0, s: 1, v: 1 }, { h: 0, s: 1, v: 0.05 }] } },
+  { id: 'puls',    name: 'Puls',      desc: 'Rött som andas',    a: { type: 'scene', num: 2, mode: 'gradient', speed: 40, units: [{ h: 0, s: 1, v: 1 }, { h: 0, s: 1, v: 0.05 }] } },
   { id: 'slack',   name: 'Släck',     desc: 'Kolsvart',          a: { type: 'off' } },
 ];
 // Vad ljuset gör när ett ljud i ljudbanken spelas; sedan återgår det till senast valda ljus
 const SFX_LIGHT = {
-  skrik:  { type: 'scene', num: 3, mode: 'jump', speed: 5, units: [{ h: 0, s: 1, v: 1 }, { h: 0, s: 0, v: 1 }, { h: 0, s: 1, v: 0.02 }] },
-  skratt: { type: 'scene', num: 4, mode: 'gradient', speed: 30, units: [{ h: 100, s: 1, v: 1 }, { h: 100, s: 1, v: 0.1 }] },
+  skrik:  { type: 'scene', num: 3, mode: 'jump', speed: 100, units: [{ h: 0, s: 1, v: 1 }, { h: 0, s: 0, v: 1 }, { h: 0, s: 1, v: 0.02 }] },
+  skratt: { type: 'scene', num: 4, mode: 'gradient', speed: 75, units: [{ h: 100, s: 1, v: 1 }, { h: 100, s: 1, v: 0.1 }] },
   knack:  { type: 'off' },
   dorr:   'flimmer',
   kedjor: 'mane',
@@ -623,7 +623,7 @@ let lightCfg = null, lightDevices = [], lightTarget = 'all', lastAmbient = null,
 try { lightCfg = JSON.parse(localStorage.getItem(LIGHT_KEY)); } catch (_) {}
 
 // Ljuslabbet: sparat läge och hastighet ersätter Flimmer-knappens gissade värden
-let lab = { mode: 'jump', speed: 20 };
+let lab = { mode: 'jump', speed: 100 };
 try { Object.assign(lab, JSON.parse(localStorage.getItem(LAB_KEY)) || {}); } catch (_) {}
 function flickerAction() {
   const f = LIGHTS.find(l => l.id === 'flimmer').a;
