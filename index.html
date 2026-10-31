@@ -124,6 +124,11 @@ input[type=range] { width: 100%; accent-color: var(--candle); height: 28px; }
 #lights .preset.sent b { color: var(--candle); }
 details { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; }
 summary { cursor: pointer; font-weight: 500; }
+.voicepick { display: grid; gap: 10px; }
+#presetSel { font: 400 1.4rem/1.2 var(--display); letter-spacing: .03em; color: var(--candle); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; width: 100%; cursor: pointer; }
+#presetSel option { color: var(--fg); background: var(--panel); font: 1rem var(--body); }
+#presetDesc { margin: 0; color: var(--muted); font-size: .9rem; }
+.tune .controls { background: none; border: 0; padding: 14px 0 4px; }
 .setup { display: grid; gap: 12px; padding-top: 12px; }
 .setup label { display: grid; gap: 6px; font-weight: 500; font-size: .9rem; }
 .setup input { font: inherit; color: var(--fg); background: #141b16; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; min-width: 0; }
@@ -140,7 +145,7 @@ summary { cursor: pointer; font-weight: 500; }
 .tips p { margin: 0; }
 .tips strong { color: var(--fg); font-weight: 500; }
 
-button:focus-visible, input:focus-visible { outline: 2px solid var(--candle); outline-offset: 3px; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--candle); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -164,8 +169,22 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--candle); ou
   </section>
 
   <section>
-    <h2>Röster</h2>
-    <div class="presets" id="presets"></div>
+    <h2>Röst</h2>
+    <div class="voicepick">
+      <select id="presetSel" aria-label="Välj röst"></select>
+      <p id="presetDesc"></p>
+      <details class="tune">
+        <summary>Röstinställningar</summary>
+        <div class="controls" id="voiceControls">
+          <div class="ctl"><label for="pitch">Tonhöjd <output id="pitchOut"></output></label><input id="pitch" type="range" min="-12" max="12" step="1" value="0"></div>
+          <div class="ctl"><label for="blend">Egen röst <output id="blendOut"></output></label><input id="blend" type="range" min="0" max="100" step="1" value="0"><small>Blandar in din vanliga röst under den förvrängda, som en kör.</small></div>
+          <div class="ctl"><label for="dist">Morr <output id="distOut"></output></label><input id="dist" type="range" min="0" max="100" step="1" value="0"></div>
+          <div class="ctl"><label for="robot">Robot <output id="robotOut"></output></label><input id="robot" type="range" min="0" max="100" step="1" value="0"></div>
+          <div class="ctl"><label for="echo">Eko <output id="echoOut"></output></label><input id="echo" type="range" min="0" max="100" step="1" value="0"></div>
+          <div class="ctl"><label for="reverb">Gravkammare <output id="reverbOut"></output></label><input id="reverb" type="range" min="0" max="100" step="1" value="0"></div>
+        </div>
+      </details>
+    </div>
   </section>
 
   <section>
@@ -233,15 +252,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--candle); ou
   </section>
 
   <section>
-    <h2>Finjustera</h2>
+    <h2>Nivåer</h2>
     <div class="controls">
-      <div class="ctl"><label for="pitch">Tonhöjd <output id="pitchOut"></output></label><input id="pitch" type="range" min="-12" max="12" step="1" value="0"></div>
-      <div class="ctl"><label for="blend">Egen röst <output id="blendOut"></output></label><input id="blend" type="range" min="0" max="100" step="1" value="0"><small>Blandar in din vanliga röst under den förvrängda, som en kör.</small></div>
-      <div class="ctl"><label for="dist">Morr <output id="distOut"></output></label><input id="dist" type="range" min="0" max="100" step="1" value="0"></div>
-      <div class="ctl"><label for="robot">Robot <output id="robotOut"></output></label><input id="robot" type="range" min="0" max="100" step="1" value="0"></div>
-      <div class="ctl"><label for="echo">Eko <output id="echoOut"></output></label><input id="echo" type="range" min="0" max="100" step="1" value="0"></div>
-      <div class="ctl"><label for="reverb">Gravkammare <output id="reverbOut"></output></label><input id="reverb" type="range" min="0" max="100" step="1" value="0"></div>
-      <hr>
       <div class="ctl"><label for="gate">Brusspärr <output id="gateOut"></output></label><input id="gate" type="range" min="0" max="100" step="1" value="35"><small>Tystar mikrofonen när du inte pratar. Lägg strecket strax över mätaren när det är tyst.</small></div>
       <div class="ctl"><label for="vol">Volym <output id="volOut"></output></label><input id="vol" type="range" min="0" max="300" step="5" value="150"></div>
       <div class="ctl"><label for="sfxVol">Ljudeffekter <output id="sfxVolOut"></output></label><input id="sfxVol" type="range" min="0" max="400" step="10" value="200"><small>Ljudbankens styrka jämfört med rösten.</small></div>
@@ -931,10 +943,16 @@ function testPlay() {
   renderTest('Så här låter du (' + (len / audio.ctx.sampleRate).toFixed(1) + ' s).');
 }
 
+function showPreset(id) {
+  if (id === 'egen') presetSel.appendChild(egenOpt); else egenOpt.remove();
+  presetSel.value = id;
+  $('presetDesc').textContent = id === 'egen' ? 'Egna inställningar. Välj en röst i listan för att börja om.' : PRESETS.find(x => x.id === id).desc;
+}
 function selectPreset(id) {
+  if (id === 'egen') return;
   const p = PRESETS.find(x => x.id === id);
   Object.entries(p.v).forEach(([k, val]) => $(k).value = val);
-  document.querySelectorAll('.preset').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === id)));
+  showPreset(id);
   apply();
 }
 
@@ -1066,14 +1084,10 @@ function setMode(m) {
 }
 
 // ---------- Init ----------
-const presetsEl = $('presets');
-PRESETS.forEach(p => {
-  const b = document.createElement('button');
-  b.type = 'button'; b.className = 'preset'; b.dataset.id = p.id; b.setAttribute('aria-pressed', 'false');
-  b.innerHTML = `<b>${p.name}</b><span>${p.desc}</span>`;
-  b.addEventListener('click', () => selectPreset(p.id));
-  presetsEl.appendChild(b);
-});
+const presetSel = $('presetSel');
+PRESETS.forEach(p => presetSel.appendChild(new Option(p.name, p.id)));
+const egenOpt = new Option('Egen', 'egen'); // läggs till bara när du ändrat ett reglage (Safari kan inte dölja alternativ)
+presetSel.addEventListener('change', () => selectPreset(presetSel.value));
 const sfxEl = $('sfx');
 SFX.forEach(s => {
   const b = document.createElement('button');
@@ -1183,7 +1197,7 @@ $('labCopy').addEventListener('click', async () => {
 renderLab();
 
 sliders.forEach(k => $(k).addEventListener('input', () => {
-  if (!NOT_IN_PRESET.includes(k)) document.querySelectorAll('.preset').forEach(b => b.setAttribute('aria-pressed', 'false'));
+  if (!NOT_IN_PRESET.includes(k)) showPreset('egen');
   apply();
 }));
 document.querySelectorAll('.mode button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
