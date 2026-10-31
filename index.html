@@ -127,6 +127,9 @@ summary { cursor: pointer; font-weight: 500; }
 .setup a { color: var(--candle); }
 .setup-btns { display: flex; gap: 12px; align-items: center; }
 .setup-btns .testbtn { flex: 1; padding: 12px 16px; min-height: 48px; }
+.lab { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+.lab .mode { justify-self: start; }
+#labOut { margin: 0; max-height: 240px; overflow: auto; background: #141b16; border: 1px solid var(--line); border-radius: 10px; padding: 10px; font-size: .72rem; white-space: pre-wrap; word-break: break-all; }
 .linkbtn { font: inherit; color: var(--muted); background: none; border: 0; text-decoration: underline; cursor: pointer; padding: 8px; }
 
 .tips { color: var(--muted); font-size: .88rem; display: grid; gap: 6px; }
@@ -191,6 +194,22 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--candle); ou
           <div class="setup-btns">
             <button type="button" id="lightSave" class="testbtn">Spara och testa</button>
             <button type="button" id="lightForget" class="linkbtn">Glöm</button>
+          </div>
+          <div class="lab">
+            <b>Ljuslabb</b>
+            <small>Ställ in Flimmer här. Det du testar senast används av Flimmer-knappen.</small>
+            <div class="mode" id="labMode" role="group" aria-label="Scenläge">
+              <button type="button" data-mode="jump" aria-pressed="true">Hoppa</button>
+              <button type="button" data-mode="gradient" aria-pressed="false">Tona</button>
+              <button type="button" data-mode="static" aria-pressed="false">Fast</button>
+            </div>
+            <div class="ctl"><label for="labSpeed">Hastighet (Tuya-värde) <output id="labSpeedOut"></output></label><input id="labSpeed" type="range" min="0" max="100" step="1" value="20"></div>
+            <div class="setup-btns">
+              <button type="button" id="labTry" class="testbtn">Testa flimmer</button>
+              <button type="button" id="labRead" class="linkbtn">Läs av lampan</button>
+            </div>
+            <pre id="labOut" hidden></pre>
+            <button type="button" id="labCopy" class="linkbtn" hidden>Kopiera avläsningen</button>
           </div>
           <small>Sparas bara i den här webbläsaren. Guiden finns i <a href="https://github.com/martinthoren/spokrosten/blob/main/lampor/README.md">lampor/README.md</a>.</small>
         </div>
@@ -599,9 +618,17 @@ const SFX_LIGHT = {
   varg:   'mane',
 };
 
-const LIGHT_KEY = 'spokrosten.lampor';
+const LIGHT_KEY = 'spokrosten.lampor', LAB_KEY = 'spokrosten.ljuslabb';
 let lightCfg = null, lightDevices = [], lightTarget = 'all', lastAmbient = null, restoreTimer = null;
 try { lightCfg = JSON.parse(localStorage.getItem(LIGHT_KEY)); } catch (_) {}
+
+// Ljuslabbet: sparat läge och hastighet ersätter Flimmer-knappens gissade värden
+let lab = { mode: 'jump', speed: 20 };
+try { Object.assign(lab, JSON.parse(localStorage.getItem(LAB_KEY)) || {}); } catch (_) {}
+function flickerAction() {
+  const f = LIGHTS.find(l => l.id === 'flimmer').a;
+  return { ...f, mode: lab.mode, speed: lab.speed };
+}
 
 function lightStatus(text, cls = '') {
   const s = $('lightStatus');
@@ -673,7 +700,7 @@ async function sendLight(action, { ambient = true, label = '' } = {}) {
 function lightForSfx(s) {
   if (!lightCfg || !$('lightFollow').checked || !SFX_LIGHT[s.id]) return;
   let a = SFX_LIGHT[s.id];
-  if (typeof a === 'string') a = LIGHTS.find(l => l.id === a).a;
+  if (typeof a === 'string') a = a === 'flimmer' ? flickerAction() : LIGHTS.find(l => l.id === a).a;
   clearTimeout(restoreTimer);
   sendLight(a, { ambient: false });
   if (lastAmbient) {
@@ -912,7 +939,7 @@ LIGHTS.forEach(l => {
   b.innerHTML = `<b>${l.name}</b><span>${l.desc}</span>`;
   b.addEventListener('click', async () => {
     lightsEl.querySelectorAll('.preset').forEach(x => x.classList.remove('sent'));
-    if (await sendLight(l.a, { label: l.name })) b.classList.add('sent');
+    if (await sendLight(l.id === 'flimmer' ? flickerAction() : l.a, { label: l.name })) b.classList.add('sent');
   });
   lightsEl.appendChild(b);
 });
@@ -932,6 +959,34 @@ $('lightForget').addEventListener('click', () => {
   connectLights();
 });
 connectLights();
+
+function renderLab() {
+  document.querySelectorAll('#labMode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === lab.mode)));
+  $('labSpeed').value = lab.speed;
+  $('labSpeedOut').textContent = lab.speed;
+}
+function saveLab() { try { localStorage.setItem(LAB_KEY, JSON.stringify(lab)); } catch (_) {} renderLab(); }
+document.querySelectorAll('#labMode button').forEach(b => b.addEventListener('click', () => { lab.mode = b.dataset.mode; saveLab(); }));
+$('labSpeed').addEventListener('input', () => { lab.speed = Number($('labSpeed').value); saveLab(); });
+$('labTry').addEventListener('click', () => sendLight(flickerAction(), { label: `Flimmer (${lab.mode}, ${lab.speed})` }));
+$('labRead').addEventListener('click', async () => {
+  if (!lightCfg) { lightStatus('Koppla in lamporna först.', 'err'); return; }
+  lightStatus('Läser av lampan…');
+  try {
+    const data = await lightApi('/debug');
+    if (data.error) throw new Error(data.error);
+    $('labOut').textContent = JSON.stringify(data.devices, null, 1);
+    $('labOut').hidden = false; $('labCopy').hidden = false;
+    lightStatus('Avläst. Kopiera och skicka till Claude.', 'ok');
+  } catch (e) {
+    lightStatus('Kunde inte läsa av: ' + e.message + ' (har du klistrat in nya worker.js?)', 'err');
+  }
+});
+$('labCopy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('labOut').textContent); lightStatus('Kopierat.', 'ok'); }
+  catch (_) { lightStatus('Kunde inte kopiera, markera texten och kopiera för hand.', 'err'); }
+});
+renderLab();
 
 sliders.forEach(k => $(k).addEventListener('input', () => {
   if (!NOT_IN_PRESET.includes(k)) document.querySelectorAll('.preset').forEach(b => b.setAttribute('aria-pressed', 'false'));

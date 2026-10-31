@@ -174,6 +174,20 @@ export default {
         return json({ devices }, 200, h);
       }
 
+      // Felsökning: lampans nuvarande läge (t.ex. en scen startad i Smart Life) och tillåtna värden
+      if (req.method === 'GET' && path === '/debug') {
+        const devices = await Promise.all(ids.map(async (id, index) => {
+          const out = { index, id };
+          try { out.status = await tuya(env, 'GET', `/v1.0/devices/${id}/status`); } catch (e) { out.statusError = e.message; }
+          try {
+            const spec = await tuya(env, 'GET', `/v1.0/devices/${id}/specifications`);
+            out.functions = (spec.functions || []).map(f => ({ code: f.code, type: f.type, values: f.values }));
+          } catch (e) { out.specError = e.message; }
+          return out;
+        }));
+        return json({ devices }, 200, h);
+      }
+
       if (req.method === 'POST' && path === '/light') {
         const { action, targets } = await req.json();
         if (!action || typeof action.type !== 'string') return json({ error: 'Saknar åtgärd' }, 400, h);
