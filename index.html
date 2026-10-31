@@ -635,7 +635,9 @@ const SFX_LIGHT = {
 };
 
 const LIGHT_KEY = 'spokrosten.lampor', LAB_KEY = 'spokrosten.ljuslabb';
-let lightCfg = null, lightDevices = [], lightTarget = 'all', lastAmbient = null, restoreTimer = null;
+let lightCfg = null, lightDevices = [], lightTarget = 'all', restoreTimer = null;
+// Grundljuset som allt återgår till (efter ljud och prat). Kryptan tills du väljer ett annat ljus.
+let lastAmbient = { action: LIGHTS.find(l => l.id === 'kryptan').a };
 try { lightCfg = JSON.parse(localStorage.getItem(LIGHT_KEY)); } catch (_) {}
 
 // Ljuslabbet: sparat läge och hastighet ersätter Flimmer-knappens gissade värden
@@ -775,7 +777,7 @@ function voiceLight(open) {
   } else if (voiceLightOn) {
     voiceLightTimer = setTimeout(() => {
       voiceLightOn = false;
-      lightDo(lastAmbient || { action: LIGHTS.find(l => l.id === 'varm').a }).catch(() => {});
+      lightDo(lastAmbient).catch(() => {});
     }, 600);
   }
 }
@@ -1032,7 +1034,7 @@ $('lightForget').addEventListener('click', () => {
 connectLights();
 $('lightVoice').addEventListener('change', () => {
   if ($('lightVoice').checked) { voiceLight(isOpen()); return; }
-  if (voiceLightOn) { voiceLightOn = false; lightDo(lastAmbient || { action: LIGHTS.find(l => l.id === 'varm').a }).catch(() => {}); }
+  if (voiceLightOn) { voiceLightOn = false; lightDo(lastAmbient).catch(() => {}); }
 });
 
 function renderLab() {
