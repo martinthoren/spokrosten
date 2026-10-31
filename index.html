@@ -603,7 +603,8 @@ const LIGHTS = [
   { id: 'lila',    name: 'Spöklila',  desc: 'Kallt och blekt',   a: { type: 'color', h: 275, s: 0.7, v: 0.7 } },
   { id: 'mane',    name: 'Månsken',   desc: 'Svagt blått',       a: { type: 'color', h: 220, s: 0.6, v: 0.25 } },
   { id: 'flimmer', name: 'Flimmer',   desc: 'Lampan krånglar',   a: { type: 'scene', num: 1, mode: 'jump', speed: 100, units: [
-      { h: 35, s: 0.3, v: 1 }, { h: 35, s: 0.3, v: 0.05 }, { h: 35, s: 0.3, v: 0.8 }, { h: 35, s: 0.3, v: 0.02 }, { h: 35, s: 0.3, v: 1 }, { h: 35, s: 0.3, v: 0.1 } ] } },
+      // Bara fullt vitt (P) och nästan svart (M). Upprepningar ger ett oregelbundet, trasigt mönster.
+      ...'PMPMMPPM'.split('').map(c => c === 'P' ? { h: 0, s: 0, v: 1 } : { h: 0, s: 0, v: 0.01 }) ] } },
   { id: 'puls',    name: 'Puls',      desc: 'Rött som andas',    a: { type: 'scene', num: 2, mode: 'gradient', speed: 40, units: [{ h: 0, s: 1, v: 1 }, { h: 0, s: 1, v: 0.05 }] } },
   { id: 'slack',   name: 'Släck',     desc: 'Kolsvart',          a: { type: 'off' } },
 ];
