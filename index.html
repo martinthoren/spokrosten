@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1410">
+<title>Spökrösten</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Creepster&family=Rubik:wght@400;500;700&display=swap">
+<style>
+/* Layout: en kolumn, stor mikrofonknapp överst, förinställningar som rutnät, finjustering under. En mörk kyrkogårdslook. */
+:root {
+  --bg: #0f1410;          /* natt över kyrkogården */
+  --panel: #18201a;
+  --line: #2b382e;
+  --fg: #e8e4d4;
+  --muted: #9aa392;
+  --candle: #f2a33a;      /* levande ljus */
+  --candle-deep: #b8621b;
+  --live: #d9412b;
+  --display: "Creepster", "Impact", fantasy;
+  --body: "Rubik", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  background: radial-gradient(120% 60% at 50% -10%, #213024 0%, var(--bg) 60%) fixed, var(--bg);
+  color: var(--fg);
+  font: 16px/1.5 var(--body);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 34rem; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; padding-block: 24px; }
+header { text-align: center; display: grid; gap: 4px; }
+h1 { font: 400 clamp(2.6rem, 12vw, 3.6rem)/1 var(--display); margin: 0; color: var(--candle); letter-spacing: 0.02em; text-shadow: 0 0 24px rgba(242,163,58,.35); text-wrap: balance; }
+.sub { margin: 0; color: var(--muted); font-size: .95rem; }
+
+/* Mikrofonknapp */
+.stage { display: grid; justify-items: center; gap: 14px; }
+#micBtn {
+  width: min(62vw, 220px); aspect-ratio: 1; max-width: 100%;
+  border-radius: 50%; border: 3px solid var(--candle-deep);
+  background: radial-gradient(circle at 50% 40%, #2a3a2d, #141b16);
+  color: var(--fg); font: 700 1.15rem/1.2 var(--body); cursor: pointer;
+  display: grid; place-items: center; text-align: center; padding: 20px;
+  transition: transform .15s ease, box-shadow .3s ease, border-color .3s;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation;
+}
+#micBtn:active { transform: scale(.97); }
+#micBtn.live { border-color: var(--live); box-shadow: 0 0 0 6px rgba(217,65,43,.18), 0 0 48px rgba(217,65,43,.45); }
+#micBtn .state { display: block; font-size: .8rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+#micBtn.live .state { color: var(--live); }
+
+/* Lägesväljare */
+.mode { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); }
+.mode button { font: 500 .85rem/1 var(--body); color: var(--muted); background: none; border: 0; border-radius: 999px; padding: 10px 14px; cursor: pointer; }
+.mode button[aria-pressed="true"] { background: #241f14; color: var(--candle); }
+
+/* Nivåmätare: visar mikrofonens nivå, strecket är brusspärrens tröskel */
+.meter { position: relative; width: min(80%, 260px); height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--candle-deep), var(--candle), var(--live)); transition: width .06s linear, opacity .15s; }
+.meter i.closed { opacity: .35; }
+#gateMark { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--fg); left: 0; }
+#gateMark[hidden] { display: none; }
+#status { margin: 0; min-height: 1.5em; color: var(--muted); font-size: .9rem; text-align: center; max-width: 30rem; }
+#status.err { color: #ff8a73; }
+
+/* Förinställningar */
+h2 { font: 700 .78rem/1 var(--body); text-transform: uppercase; letter-spacing: .14em; color: var(--muted); margin: 0 0 12px; }
+.presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.preset {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; color: var(--fg);
+  padding: 14px 14px 12px; text-align: left; cursor: pointer; font: inherit; display: grid; gap: 2px;
+  transition: border-color .2s, background .2s;
+}
+.preset b { font: 400 1.5rem/1 var(--display); letter-spacing: .03em; }
+.preset span { font-size: .82rem; color: var(--muted); }
+.preset[aria-pressed="true"] { border-color: var(--candle); background: #241f14; }
+.preset[aria-pressed="true"] b { color: var(--candle); }
+.sfx .preset b { font-size: 1.25rem; }
+.sfx .preset.playing { border-color: var(--live); background: #2a1814; }
+.sfx .preset.playing b { color: var(--live); }
+
+/* Reglage */
+.controls { display: grid; gap: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+.ctl { display: grid; gap: 6px; }
+.ctl label { display: flex; justify-content: space-between; gap: 12px; font-weight: 500; }
+.ctl output { color: var(--candle); font-variant-numeric: tabular-nums; font-weight: 400; }
+.ctl small { color: var(--muted); font-size: .8rem; margin-top: -4px; }
+.controls hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
+input[type=range] { width: 100%; accent-color: var(--candle); height: 28px; }
+
+.tips { color: var(--muted); font-size: .88rem; display: grid; gap: 6px; }
+.tips p { margin: 0; }
+.tips strong { color: var(--fg); font-weight: 500; }
+
+button:focus-visible, input:focus-visible { outline: 2px solid var(--candle); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Spökrösten</h1>
+    <p class="sub">Prata i telefonen, skräm från högtalaren.</p>
+  </header>
+
+  <section class="stage">
+    <button id="micBtn" type="button" aria-pressed="false">
+      <span><span id="micLabel">Starta rösten</span><span class="state" id="micState">Av</span></span>
+    </button>
+    <div class="mode" role="group" aria-label="Läge">
+      <button type="button" data-mode="toggle" aria-pressed="true">Av/på</button>
+      <button type="button" data-mode="ptt" aria-pressed="false">Håll för att prata</button>
+    </div>
+    <div class="meter" aria-hidden="true"><i id="meterBar"></i><b id="gateMark"></b></div>
+    <p id="status" role="status">Koppla in högtalaren först, tryck sedan på knappen.</p>
+  </section>
+
+  <section>
+    <h2>Röster</h2>
+    <div class="presets" id="presets"></div>
+  </section>
+
+  <section>
+    <h2>Ljudbank</h2>
+    <div class="presets sfx" id="sfx"></div>
+  </section>
+
+  <section>
+    <h2>Finjustera</h2>
+    <div class="controls">
+      <div class="ctl"><label for="pitch">Tonhöjd <output id="pitchOut"></output></label><input id="pitch" type="range" min="-12" max="12" step="1" value="0"></div>
+      <div class="ctl"><label for="blend">Egen röst <output id="blendOut"></output></label><input id="blend" type="range" min="0" max="100" step="1" value="0"><small>Blandar in din vanliga röst under den förvrängda, som en kör.</small></div>
+      <div class="ctl"><label for="dist">Morr <output id="distOut"></output></label><input id="dist" type="range" min="0" max="100" step="1" value="0"></div>
+      <div class="ctl"><label for="robot">Robot <output id="robotOut"></output></label><input id="robot" type="range" min="0" max="100" step="1" value="0"></div>
+      <div class="ctl"><label for="echo">Eko <output id="echoOut"></output></label><input id="echo" type="range" min="0" max="100" step="1" value="0"></div>
+      <div class="ctl"><label for="reverb">Gravkammare <output id="reverbOut"></output></label><input id="reverb" type="range" min="0" max="100" step="1" value="0"></div>
+      <hr>
+      <div class="ctl"><label for="gate">Brusspärr <output id="gateOut"></output></label><input id="gate" type="range" min="0" max="100" step="1" value="35"><small>Tystar mikrofonen när du inte pratar. Lägg strecket strax över mätaren när det är tyst.</small></div>
+      <div class="ctl"><label for="vol">Volym <output id="volOut"></output></label><input id="vol" type="range" min="0" max="300" step="5" value="150"></div>
+    </div>
+  </section>
+
+  <section class="tips">
+    <p><strong>Rundgång:</strong> står du nära högtalaren tjuter det. Stå inne, stäng dörren eller använd hörlurar med mikrofon. Läget ”Håll för att prata” och brusspärren hjälper också.</p>
+    <p><strong>Burkigt ljud?</strong> Då har telefonen bytt till högtalarens egen mikrofon. Välj telefonens mikrofon eller en högtalare utan mikrofon.</p>
+    <p><strong>Fördröjning:</strong> blåtand ger ungefär en tiondels till tre tiondels sekund. Det hör till.</p>
+  </section>
+</main>
+
+<script>
+// ---------- Tonhöjdsförskjutare (AudioWorklet, två fördröjningslinjer med korsblandning) ----------
+const workletSrc = `
+class PitchShifter extends AudioWorkletProcessor {
+  static get parameterDescriptors() { return [{ name: 'ratio', defaultValue: 1, minValue: 0.25, maxValue: 4 }]; }
+  constructor() {
+    super();
+    this.N = 16384;
+    this.buf = new Float32Array(this.N);
+    this.w = 0;
+    this.phase = 0;
+    this.W = Math.floor(sampleRate * 0.05);
+  }
+  read(d) {
+    let idx = this.w - d;
+    while (idx < 0) idx += this.N;
+    const i0 = Math.floor(idx), f = idx - i0;
+    const a = this.buf[i0 % this.N], b = this.buf[(i0 + 1) % this.N];
+    return a + (b - a) * f;
+  }
+  process(inputs, outputs, params) {
+    const input = inputs[0], output = outputs[0];
+    if (!input || !input[0]) return true;
+    const inp = input[0], rp = params.ratio, W = this.W, N = this.N;
+    for (let i = 0; i < inp.length; i++) {
+      const ratio = rp.length > 1 ? rp[i] : rp[0];
+      this.buf[this.w] = inp[i];
+      let y;
+      if (Math.abs(ratio - 1) < 1e-3) {
+        y = inp[i];
+      } else {
+        this.phase += (1 - ratio) / W;
+        if (this.phase >= 1) this.phase -= 1;
+        if (this.phase < 0) this.phase += 1;
+        const p2 = (this.phase + 0.5) % 1;
+        y = this.read(this.phase * W) * Math.sin(Math.PI * this.phase)
+          + this.read(p2 * W) * Math.sin(Math.PI * p2);
+      }
+      for (let c = 0; c < output.length; c++) output[c][i] = y;
+      this.w = (this.w + 1) % N;
+    }
+    return true;
+  }
+}
+registerProcessor('pitch-shifter', PitchShifter);
+`;
+
+// ---------- Röster ----------
+const PRESETS = [
+  { id: 'ren',     name: 'Ren',     desc: 'Din vanliga röst', v: { pitch: 0,   blend: 0,  dist: 0,  robot: 0,   echo: 0,  reverb: 0 } },
+  { id: 'demon',   name: 'Demon',   desc: 'Djup och hes',     v: { pitch: -7,  blend: 45, dist: 35, robot: 0,   echo: 10, reverb: 30 } },
+  { id: 'monster', name: 'Monster', desc: 'Morrande jätte',   v: { pitch: -12, blend: 40, dist: 60, robot: 15,  echo: 0,  reverb: 20 } },
+  { id: 'robot',   name: 'Robot',   desc: 'Metallisk maskin', v: { pitch: 0,   blend: 0,  dist: 10, robot: 100, echo: 15, reverb: 10 } },
+  { id: 'spoke',   name: 'Spöke',   desc: 'Ekar ur graven',   v: { pitch: 4,   blend: 0,  dist: 0,  robot: 0,   echo: 45, reverb: 75 } },
+  { id: 'haxa',    name: 'Häxa',    desc: 'Gäll och kraxig',  v: { pitch: 7,   blend: 25, dist: 18, robot: 0,   echo: 20, reverb: 25 } },
+];
+
+const $ = id => document.getElementById(id);
+const sliders = ['pitch', 'blend', 'dist', 'robot', 'echo', 'reverb', 'gate', 'vol'];
+const NOT_IN_PRESET = ['gate', 'vol']; // beror på rummet, inte på rösten
+const gateDb = v => -65 + v * 0.4;    // reglage 1–100 → tröskel −65…−25 dB
+const fmt = {
+  pitch: v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v) + ' halvtoner',
+  gate: v => v === 0 ? 'Av' : '−' + Math.abs(Math.round(gateDb(v))) + ' dB',
+  vol: v => v + ' %',
+};
+
+let audio = null;      // byggs vid första start
+let starting = null;   // pågående uppstart (promise)
+let mode = 'toggle';   // 'toggle' = av/på, 'ptt' = håll för att prata
+let live = false;      // av/på-läget: rösten är på
+let held = false;      // håll-läget: knappen hålls inne
+let wakeLock = null;
+const isOpen = () => !!audio && (mode === 'ptt' ? held : live);
+
+function currentValues() {
+  const o = {};
+  sliders.forEach(k => o[k] = Number($(k).value));
+  return o;
+}
+function showOutputs() {
+  sliders.forEach(k => { const v = Number($(k).value); $(k + 'Out').textContent = fmt[k] ? fmt[k](v) : v + ' %'; });
+}
+
+// ---------- Ljudgraf ----------
+function makeDistCurve(amount) {
+  const k = amount / 100 * 60, n = 2048, c = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = i * 2 / n - 1; c[i] = (1 + k) * x / (1 + k * Math.abs(x)); }
+  return c;
+}
+function makeImpulse(ctx, seconds) {
+  const len = Math.floor(ctx.sampleRate * seconds), buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+  }
+  return buf;
+}
+
+async function buildAudio() {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 }
+  });
+  const src = ctx.createMediaStreamSource(stream);
+
+  let pitchNode = null;
+  if (ctx.audioWorklet) {
+    try {
+      const url = URL.createObjectURL(new Blob([workletSrc], { type: 'application/javascript' }));
+      await ctx.audioWorklet.addModule(url);
+      pitchNode = new AudioWorkletNode(ctx, 'pitch-shifter', { outputChannelCount: [1] });
+    } catch (e) { console.warn('Tonhöjd ej tillgänglig', e); }
+  }
+
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 80;
+
+  // Brusspärr: mäter mikrofonen före spärren, öppnar/stänger gate.gain
+  const inAnalyser = ctx.createAnalyser(); inAnalyser.fftSize = 1024;
+  const gate = ctx.createGain(); gate.gain.value = 1;
+
+  // Förvrängd röst + egen röst blandas innan morr och effekter
+  const dry = ctx.createGain(); dry.gain.value = 0;
+  const voice = ctx.createGain();
+
+  const shaper = ctx.createWaveShaper(); shaper.oversample = '4x';
+  const pre = ctx.createGain();
+
+  // Ringmodulator (robot)
+  const ring = ctx.createGain(); ring.gain.value = 0;
+  const osc = ctx.createOscillator(); osc.frequency.value = 55; osc.connect(ring.gain); osc.start();
+  const ringWet = ctx.createGain(), ringDry = ctx.createGain();
+  const mid = ctx.createGain();
+
+  // Eko
+  const delay = ctx.createDelay(2); delay.delayTime.value = 0.28;
+  const fb = ctx.createGain(), echoWet = ctx.createGain();
+  // Rumsklang, lågpassad för en mörkare gravkammare
+  const conv = ctx.createConvolver(); conv.buffer = makeImpulse(ctx, 3);
+  const revLp = ctx.createBiquadFilter(); revLp.type = 'lowpass'; revLp.frequency.value = 2400; revLp.Q.value = 0.5;
+  const revWet = ctx.createGain();
+
+  const master = ctx.createGain(); master.gain.value = 0;
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -10; comp.ratio.value = 12; comp.attack.value = 0.003; comp.release.value = 0.15;
+
+  src.connect(hp);
+  hp.connect(inAnalyser);
+  hp.connect(gate);
+  if (pitchNode) { gate.connect(pitchNode); pitchNode.connect(voice); } else { gate.connect(voice); }
+  gate.connect(dry); dry.connect(voice);
+  voice.connect(shaper);
+  shaper.connect(pre);
+  pre.connect(ringDry); pre.connect(ring); ring.connect(ringWet);
+  ringDry.connect(mid); ringWet.connect(mid);
+  mid.connect(master);
+  mid.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(echoWet); echoWet.connect(master);
+  mid.connect(conv); conv.connect(revLp); revLp.connect(revWet); revWet.connect(master);
+  master.connect(comp); comp.connect(ctx.destination);
+
+  // Ljudbank: egen buss förbi röstens av/på, med en egen lätt klang
+  const sfx = ctx.createGain();
+  const sfxConv = ctx.createConvolver(); sfxConv.buffer = conv.buffer;
+  const sfxRevLp = ctx.createBiquadFilter(); sfxRevLp.type = 'lowpass'; sfxRevLp.frequency.value = 2400;
+  const sfxRev = ctx.createGain(); sfxRev.gain.value = 0.35;
+  sfx.connect(comp);
+  sfx.connect(sfxConv); sfxConv.connect(sfxRevLp); sfxRevLp.connect(sfxRev); sfxRev.connect(comp);
+
+  return {
+    ctx, stream, pitchNode, shaper, ringWet, ringDry, fb, echoWet, revWet, master, dry, gate, sfx,
+    inAnalyser, inBuf: new Float32Array(inAnalyser.fftSize), lastDist: -1,
+  };
+}
+
+function apply() {
+  showOutputs();
+  $('gateMark').hidden = Number($('gate').value) === 0;
+  $('gateMark').style.left = meterPct(gateDb(Number($('gate').value))) + '%';
+  if (!audio) return;
+  const v = currentValues(), t = audio.ctx.currentTime, s = 0.05;
+  if (audio.pitchNode) audio.pitchNode.parameters.get('ratio').setTargetAtTime(Math.pow(2, v.pitch / 12), t, s);
+  audio.dry.gain.setTargetAtTime(v.blend / 100 * 0.9, t, s);
+  if (v.dist !== audio.lastDist) { audio.shaper.curve = v.dist > 0 ? makeDistCurve(v.dist) : null; audio.lastDist = v.dist; }
+  const r = v.robot / 100;
+  audio.ringWet.gain.setTargetAtTime(r * 1.6, t, s);
+  audio.ringDry.gain.setTargetAtTime(1 - r, t, s);
+  const e = v.echo / 100;
+  audio.echoWet.gain.setTargetAtTime(e * 0.7, t, s);
+  audio.fb.gain.setTargetAtTime(e * 0.55, t, s);
+  audio.revWet.gain.setTargetAtTime(v.reverb / 100 * 1.2, t, s);
+  audio.master.gain.setTargetAtTime(isOpen() ? v.vol / 100 : 0, t, mode === 'ptt' ? 0.015 : s);
+  audio.sfx.gain.setTargetAtTime(v.vol / 100, t, s);
+}
+
+// ---------- Ljudbank (allt syntetiseras, inga ljudfiler) ----------
+function noise(ctx) {
+  if (!noise.buf || noise.buf.sampleRate !== ctx.sampleRate) {
+    const len = ctx.sampleRate * 2, b = ctx.createBuffer(1, len, ctx.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    noise.buf = b;
+  }
+  const s = ctx.createBufferSource(); s.buffer = noise.buf; s.loop = true;
+  return s;
+}
+function gain(ctx, v = 0) { const n = ctx.createGain(); n.gain.value = v; return n; }
+function filt(ctx, f, q, type = 'bandpass') { const n = ctx.createBiquadFilter(); n.type = type; n.frequency.value = f; n.Q.value = q; return n; }
+function chain(...nodes) { for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]); return nodes[nodes.length - 1]; }
+function ramp(param, t0, pts, exp = false) {
+  param.setValueAtTime(pts[0][1], t0 + pts[0][0]);
+  for (let i = 1; i < pts.length; i++) {
+    if (exp) param.exponentialRampToValueAtTime(pts[i][1], t0 + pts[i][0]);
+    else param.linearRampToValueAtTime(pts[i][1], t0 + pts[i][0]);
+  }
+}
+function shaperNode(ctx, amount) { const s = ctx.createWaveShaper(); s.curve = makeDistCurve(amount); return s; }
+
+const SFX = [
+  { id: 'skrik', name: 'Skrik', desc: 'Hjärtat stannar', dur: 1.9, play(ctx, out, t) {
+    const amp = gain(ctx); amp.connect(out);
+    ramp(amp.gain, t, [[0, 0], [0.06, 0.8], [1.3, 0.6], [1.9, 0]]);
+    const sh = shaperNode(ctx, 40), f1 = filt(ctx, 1100, 2.5), f2 = filt(ctx, 2600, 4);
+    sh.connect(f1); sh.connect(f2); f1.connect(amp); f2.connect(amp);
+    const vib = ctx.createOscillator(); vib.frequency.value = 6.5;
+    const vg = gain(ctx, 35); vib.connect(vg); vib.start(t); vib.stop(t + 1.95);
+    [0, 25].forEach(det => {
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.detune.value = det;
+      ramp(o.frequency, t, [[0, 450], [0.22, 1250], [1.1, 1050], [1.9, 650]], true);
+      vg.connect(o.frequency); o.connect(sh); o.start(t); o.stop(t + 1.95);
+    });
+    const n = noise(ctx); chain(n, filt(ctx, 3500, 1), gain(ctx, 0.25), amp); n.start(t); n.stop(t + 1.95);
+  } },
+  { id: 'skratt', name: 'Skratt', desc: 'Ondskefullt', dur: 2.3, play(ctx, out, t) {
+    const src = ctx.createOscillator(); src.type = 'sawtooth';
+    const amp = gain(ctx), boost = gain(ctx, 3);
+    [[700, 5], [1150, 6]].forEach(([f, q]) => chain(src, filt(ctx, f, q), amp));
+    chain(amp, boost, out);
+    const n = noise(ctx), breath = gain(ctx); chain(n, filt(ctx, 1500, 1), breath, out);
+    amp.gain.setValueAtTime(0, t); breath.gain.setValueAtTime(0, t);
+    let k = t;
+    for (let i = 0; i < 7; i++) {
+      const f0 = 150 - i * 8;
+      src.frequency.setValueAtTime(f0, k); src.frequency.exponentialRampToValueAtTime(f0 * 0.85, k + 0.17);
+      breath.gain.setValueAtTime(0, k); breath.gain.linearRampToValueAtTime(0.25, k + 0.02); breath.gain.linearRampToValueAtTime(0, k + 0.06);
+      amp.gain.setValueAtTime(0, k + 0.03); amp.gain.linearRampToValueAtTime(0.9, k + 0.06); amp.gain.linearRampToValueAtTime(0, k + 0.2);
+      k += 0.26 + i * 0.015;
+    }
+    src.start(t); src.stop(k + 0.1); n.start(t); n.stop(k + 0.1);
+  } },
+  { id: 'knack', name: 'Knackning', desc: 'Tre slag på dörren', dur: 0.9, play(ctx, out, t) {
+    [0, 0.32, 0.64].forEach(d => {
+      const k = t + d;
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(160, k); o.frequency.exponentialRampToValueAtTime(55, k + 0.09);
+      const a = gain(ctx); a.gain.setValueAtTime(1, k); a.gain.exponentialRampToValueAtTime(0.001, k + 0.18);
+      chain(o, a, out); o.start(k); o.stop(k + 0.2);
+      const n = noise(ctx), na = gain(ctx);
+      na.gain.setValueAtTime(0.6, k); na.gain.exponentialRampToValueAtTime(0.001, k + 0.04);
+      chain(n, filt(ctx, 1800, 0.7, 'lowpass'), na, out); n.start(k); n.stop(k + 0.06);
+    });
+  } },
+  { id: 'dorr', name: 'Dörr', desc: 'Gnisslande gångjärn', dur: 2.4, play(ctx, out, t) {
+    const dur = 2.4, o = ctx.createOscillator(); o.type = 'square';
+    const curve = new Float32Array(64); let f = 28;
+    for (let i = 0; i < curve.length; i++) { f = Math.min(70, Math.max(14, f + (Math.random() - 0.45) * 8)); curve[i] = f; }
+    o.frequency.setValueCurveAtTime(curve, t, dur);
+    const amp = gain(ctx); ramp(amp.gain, t, [[0, 0], [0.25, 0.7], [1.8, 0.6], [dur, 0]]);
+    [[650, 18], [1400, 22], [2300, 25]].forEach(([fr, q]) => {
+      const b = filt(ctx, fr, q); ramp(b.frequency, t, [[0, fr], [dur, fr * 1.15]]);
+      chain(o, b, gain(ctx, 4), amp);
+    });
+    amp.connect(out); o.start(t); o.stop(t + dur + 0.05);
+  } },
+  { id: 'kedjor', name: 'Kedjor', desc: 'Skramlande järn', dur: 1.8, play(ctx, out, t) {
+    for (let i = 0; i < 22; i++) {
+      const k = t + Math.pow(Math.random(), 1.5) * 1.5, vol = 0.12 + Math.random() * 0.15;
+      [2.1, 3.3, 4.7].forEach(base => {
+        const o = ctx.createOscillator(); o.frequency.value = base * 1000 * (0.85 + Math.random() * 0.3);
+        const a = gain(ctx); a.gain.setValueAtTime(vol, k); a.gain.exponentialRampToValueAtTime(0.001, k + 0.08 + Math.random() * 0.15);
+        chain(o, a, out); o.start(k); o.stop(k + 0.25);
+      });
+    }
+  } },
+  { id: 'hjarta', name: 'Hjärtslag', desc: 'Allt snabbare', dur: 4.8, play(ctx, out, t) {
+    let k = t;
+    for (let i = 0; i < 7; i++) {
+      [[0, 1], [0.17, 0.65]].forEach(([d, v]) => {
+        const s = k + d, o = ctx.createOscillator();
+        o.frequency.setValueAtTime(90, s); o.frequency.exponentialRampToValueAtTime(42, s + 0.12);
+        const a = gain(ctx); a.gain.setValueAtTime(0, s); a.gain.linearRampToValueAtTime(v * 1.2, s + 0.012); a.gain.exponentialRampToValueAtTime(0.001, s + 0.22);
+        chain(o, shaperNode(ctx, 30), a, out); o.start(s); o.stop(s + 0.25);
+      });
+      k += 0.85 - i * 0.06;
+    }
+  } },
+  { id: 'varg', name: 'Varg', desc: 'Ylar mot månen', dur: 3.4, play(ctx, out, t) {
+    const dur = 3.4, o = ctx.createOscillator(); o.type = 'sawtooth';
+    ramp(o.frequency, t, [[0, 260], [0.7, 540], [2.4, 580], [dur, 330]], true);
+    const vib = ctx.createOscillator(); vib.frequency.value = 5;
+    const vg = gain(ctx); ramp(vg.gain, t, [[0, 0], [0.8, 4], [2.6, 14], [dur, 6]]);
+    chain(vib, vg, o.frequency);
+    const f1 = filt(ctx, 450, 3), f2 = filt(ctx, 1000, 5);
+    ramp(f1.frequency, t, [[0, 380], [0.8, 750], [2.5, 700], [dur, 420]]);
+    ramp(f2.frequency, t, [[0, 800], [0.8, 1150], [dur, 850]]);
+    const amp = gain(ctx); ramp(amp.gain, t, [[0, 0], [0.45, 1.4], [2.6, 1.2], [dur, 0]]);
+    o.connect(f1); o.connect(f2); f1.connect(amp); f2.connect(amp); amp.connect(out);
+    o.start(t); o.stop(t + dur + 0.05); vib.start(t); vib.stop(t + dur + 0.05);
+  } },
+];
+
+async function playSfx(s, btn) {
+  if (!audio) {
+    try { await ensureAudio(); } catch (e) { fail(e); return; }
+    update();
+  } else {
+    audio.ctx.resume();
+  }
+  const ctx = audio.ctx, out = gain(ctx, 1);
+  out.connect(audio.sfx);
+  s.play(ctx, out, ctx.currentTime + 0.02);
+  btn.classList.add('playing');
+  clearTimeout(btn._t);
+  btn._t = setTimeout(() => btn.classList.remove('playing'), s.dur * 1000);
+  setTimeout(() => out.disconnect(), (s.dur + 1) * 1000);
+}
+
+function selectPreset(id) {
+  const p = PRESETS.find(x => x.id === id);
+  Object.entries(p.v).forEach(([k, val]) => $(k).value = val);
+  document.querySelectorAll('.preset').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === id)));
+  apply();
+}
+
+// ---------- Brusspärr och nivåmätare ----------
+const meterPct = db => Math.max(0, Math.min(100, (db + 70) / 70 * 100)); // −70…0 dB
+let inDb = -100, gateOpen = true, gateHoldUntil = 0;
+
+function gateLoop() {
+  if (!audio) return;
+  audio.inAnalyser.getFloatTimeDomainData(audio.inBuf);
+  let sum = 0; for (let i = 0; i < audio.inBuf.length; i++) sum += audio.inBuf[i] * audio.inBuf[i];
+  inDb = 20 * Math.log10(Math.sqrt(sum / audio.inBuf.length) + 1e-9);
+  const g = Number($('gate').value), now = performance.now();
+  let open = true;
+  if (g > 0) {
+    if (inDb > gateDb(g)) gateHoldUntil = now + 300; // håll öppet en stund så ordslut inte klipps
+    open = now < gateHoldUntil;
+  }
+  if (open !== gateOpen) {
+    gateOpen = open;
+    audio.gate.gain.setTargetAtTime(open ? 1 : 0, audio.ctx.currentTime, open ? 0.004 : 0.06);
+  }
+}
+function meterLoop() {
+  const bar = $('meterBar');
+  bar.style.width = (audio ? meterPct(inDb) : 0) + '%';
+  bar.classList.toggle('closed', !gateOpen);
+  requestAnimationFrame(meterLoop);
+}
+
+// ---------- Start, lägen och knapp ----------
+function ensureAudio() {
+  if (!starting) {
+    starting = (async () => {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('insecure');
+      setStatus('Ber om mikrofonen…');
+      audio = await buildAudio();
+    })().catch(e => { starting = null; throw e; });
+  }
+  return starting.then(() => audio.ctx.resume());
+}
+
+function setStatus(text, err = false) {
+  const s = $('status');
+  s.textContent = text;
+  s.classList.toggle('err', err);
+}
+
+function render() {
+  const open = isOpen(), btn = $('micBtn');
+  btn.classList.toggle('live', open);
+  btn.setAttribute('aria-pressed', String(open));
+  document.querySelectorAll('.mode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+
+  let label, state, text;
+  if (mode === 'toggle') {
+    label = open ? 'Pausa rösten' : 'Starta rösten';
+    state = open ? 'Live' : 'Av';
+    text = open ? 'Du är live. Prata!'
+      : audio ? 'Pausad. Mikrofonen hörs inte i högtalaren.'
+      : 'Koppla in högtalaren först, tryck sedan på knappen.';
+  } else {
+    label = audio ? 'Håll för att prata' : 'Tryck för att börja';
+    state = open ? 'Live' : audio ? 'Redo' : 'Av';
+    text = open ? 'Live! Släpp knappen för att tystna.'
+      : audio ? 'Redo. Håll inne knappen när du vill prata.'
+      : 'Tryck en gång för att koppla in mikrofonen, håll sedan inne för att prata.';
+  }
+  if (audio && !audio.pitchNode) text += ' Tonhöjd stöds inte i den här webbläsaren, övriga effekter fungerar.';
+  $('micLabel').textContent = label;
+  $('micState').textContent = state;
+  setStatus(text);
+}
+
+function update() { apply(); render(); syncWakeLock(); }
+
+function fail(e) {
+  live = false; held = false;
+  apply();
+  if (e.message === 'insecure') setStatus('Mikrofonen kräver att sidan öppnas via https (eller localhost).', true);
+  else if (e.name === 'NotAllowedError') setStatus('Mikrofonen nekades. Tillåt mikrofon för sidan i webbläsarens inställningar och försök igen.', true);
+  else setStatus('Kunde inte starta ljudet: ' + e.message, true);
+}
+
+let wakeLockBusy = false;
+async function syncWakeLock() {
+  const want = !!audio && (live || mode === 'ptt') && document.visibilityState === 'visible';
+  if (wakeLockBusy || !navigator.wakeLock) return;
+  wakeLockBusy = true;
+  try {
+    if (want && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!want && wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch (_) {}
+  wakeLockBusy = false;
+}
+
+async function toggleLive() {
+  try { if (!live) await ensureAudio(); } catch (e) { fail(e); return; }
+  live = !live;
+  update();
+}
+// Första trycket i håll-läget kopplar in mikrofonen (kräver ett riktigt klick på mobilen)
+async function prepare() {
+  try { await ensureAudio(); } catch (e) { fail(e); return; }
+  update();
+}
+function press() {
+  if (mode !== 'ptt' || !audio || held) return;
+  held = true;
+  audio.ctx.resume();
+  update();
+}
+function release() {
+  if (!held) return;
+  held = false;
+  update();
+}
+function setMode(m) {
+  if (m === mode) return;
+  mode = m; live = false; held = false;
+  update();
+}
+
+// ---------- Init ----------
+const presetsEl = $('presets');
+PRESETS.forEach(p => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'preset'; b.dataset.id = p.id; b.setAttribute('aria-pressed', 'false');
+  b.innerHTML = `<b>${p.name}</b><span>${p.desc}</span>`;
+  b.addEventListener('click', () => selectPreset(p.id));
+  presetsEl.appendChild(b);
+});
+const sfxEl = $('sfx');
+SFX.forEach(s => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'preset';
+  b.innerHTML = `<b>${s.name}</b><span>${s.desc}</span>`;
+  b.addEventListener('click', () => playSfx(s, b));
+  sfxEl.appendChild(b);
+});
+sliders.forEach(k => $(k).addEventListener('input', () => {
+  if (!NOT_IN_PRESET.includes(k)) document.querySelectorAll('.preset').forEach(b => b.setAttribute('aria-pressed', 'false'));
+  apply();
+}));
+document.querySelectorAll('.mode button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+
+const micBtn = $('micBtn');
+micBtn.addEventListener('click', () => {
+  if (mode === 'toggle') toggleLive();
+  else if (!audio) prepare();
+});
+micBtn.addEventListener('pointerdown', e => {
+  if (mode !== 'ptt' || !audio) return;
+  e.preventDefault();
+  try { micBtn.setPointerCapture(e.pointerId); } catch (_) {}
+  press();
+});
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => micBtn.addEventListener(ev, release));
+micBtn.addEventListener('contextmenu', e => { if (mode === 'ptt') e.preventDefault(); });
+micBtn.addEventListener('keydown', e => {
+  if (mode !== 'ptt' || !audio || (e.key !== ' ' && e.key !== 'Enter')) return;
+  e.preventDefault();
+  if (!e.repeat) press();
+});
+micBtn.addEventListener('keyup', e => {
+  if (mode !== 'ptt' || (e.key !== ' ' && e.key !== 'Enter')) return;
+  e.preventDefault();
+  release();
+});
+micBtn.addEventListener('blur', release);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') release();
+  syncWakeLock();
+});
+
+selectPreset('demon');
+setInterval(gateLoop, 15);
+meterLoop();
+</script>
+</body>
+</html>
