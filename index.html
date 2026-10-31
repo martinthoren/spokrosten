@@ -601,6 +601,7 @@ async function playSfx(s, btn) {
 // Strobe körs inte som scen utan som snabbt av/på från workern (~94 ms per växling, uppmätt).
 const strobe = (h, s) => ({ type: 'strobe', h, s, v: 1 });
 const RED_STROBE = strobe(0, 1);
+const KRYPT_SPEED = 90; // Kryptans glapptakt: högre = tätare och kortare glapp
 const LIGHTS = [
   { id: 'varm',    name: 'Varmt',     desc: 'Vanligt ljus',      a: { type: 'white', v: 0.8, temp: 0.1 } },
   { id: 'rod',     name: 'Blodrött',  desc: 'Djupt rött',        a: { type: 'color', h: 0, s: 1, v: 1 } },
@@ -615,9 +616,12 @@ const LIGHTS = [
   { id: 'puls',    name: 'Puls',      desc: 'Rött som andas',    a: { type: 'scene', num: 2, mode: 'gradient', speed: 40, units: [{ h: 0, s: 1, v: 1 }, { h: 0, s: 1, v: 0.05 }] } },
   { id: 'slack',   name: 'Släck',     desc: 'Kolsvart',          a: { type: 'off' } },
   // Tema: varje lampa gör sin egen sak. Lampa 2 lyser svagt rött, lampa 1 är en trasig glödlampa.
+  // Glappet körs som scen i lampan själv: ett anrop när knappen trycks, sedan gratis hur länge som helst.
   { id: 'kryptan', name: 'Kryptan',   desc: 'Rött sken + glapp', a: { type: 'theme', parts: [
       { lamp: 1, action: { type: 'color', h: 0, s: 1, v: 0.12 } },
-      { lamp: 0, action: { type: 'white', v: 0.3, temp: 0.05 }, glitch: true } ] } },
+      { lamp: 0, action: { type: 'scene', num: 5, mode: 'jump', speed: KRYPT_SPEED, units:
+          // L = svagt varmt sken, X = slocknar. Fem lugna steg, sedan ett dubbelryck.
+          'LLLLLXLX'.split('').map(c => c === 'L' ? { h: 35, s: 0.55, v: 0.3 } : { h: 35, s: 0.55, v: 0.01 }) } } ] } },
 ];
 // Vad ljuset gör när ett ljud i ljudbanken spelas; sedan återgår det till senast valda ljus
 const SFX_LIGHT = {
@@ -739,41 +743,13 @@ async function lightDo(entry) {
   return lightApi('/light', entry);
 }
 
-// ---------- Tema med glapp: lampan lyser svagt och slocknar till då och då ----------
-// Ljuset ligger still i lampan (1 anrop), bara själva glappen kostar: 2–4 anrop var 2–7:e sekund,
-// ungefär 2 000 anrop i timmen. Den snabba stroben drar ~36 000 i timmen per lampa.
+// ---------- Tema: olika ljus i olika lampor, ett anrop per lampa ----------
 async function runTheme(theme) {
   const n = Math.max(1, lightDevices.length);
   const parts = theme.parts.filter(p => p.lamp < n);
   const results = (await Promise.all(parts.map(p =>
     lightApi('/light', { action: p.action, targets: [p.lamp] }).then(r => r.results, e => [{ ok: false, error: e.message }])))).flat();
-  const glitchy = parts.filter(p => p.glitch).map(p => p.lamp);
-  if (glitchy.length && results.some(r => r.ok)) runGlitch(glitchy);
   return { results };
-}
-async function runGlitch(targets) {
-  const run = ++strobeRun;
-  const wait = ms => new Promise(r => setTimeout(r, ms));
-  const call = p => { strobeInflight = p; return p; };
-  let fails = 0;
-  while (run === strobeRun) {
-    await wait(2000 + Math.random() * 5000);
-    if (run !== strobeRun) return;
-    const roll = Math.random();
-    try {
-      if (roll < 0.5) await call(lightApi('/blink', { count: 2, targets }));       // snabbt ryck
-      else if (roll < 0.8) await call(lightApi('/blink', { count: 4, targets }));  // dubbelryck
-      else {                                                                       // längre avbrott
-        await call(lightApi('/light', { action: { type: 'off' }, targets }));
-        await wait(200 + Math.random() * 500);
-        if (run !== strobeRun) return; // ett annat ljus har tagit över, tänd inte igen
-        await call(lightApi('/light', { action: { type: 'on' }, targets }));
-      }
-      fails = 0;
-    } catch (e) {
-      if (++fails >= 3) { if (run === strobeRun) lightStatus('Glappet stannade: ' + e.message, 'err'); return; }
-    }
-  }
 }
 
 function lightForSfx(s) {
