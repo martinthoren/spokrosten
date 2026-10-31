@@ -105,6 +105,10 @@ input[type=range] { width: 100%; accent-color: var(--candle); height: 28px; }
 }
 .testbtn.rec { border-color: var(--live); background: #2a1814; box-shadow: 0 0 24px rgba(217,65,43,.35); }
 .testbtn.play { border-color: var(--candle); background: #241f14; }
+.ttsrows { display: grid; gap: 10px; }
+.ttsrow { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: stretch; }
+.ttsrow .testbtn { padding: 10px 16px; min-width: 76px; }
+.ttstext { font: inherit; color: var(--fg); background: #141b16; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; min-width: 0; resize: vertical; }
 #testStatus { margin: 0; color: var(--muted); font-size: .88rem; }
 
 /* Ljus */
@@ -175,6 +179,15 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--candle); ou
   <section>
     <h2>Ljudbank</h2>
     <div class="presets sfx" id="sfx"></div>
+  </section>
+
+  <section>
+    <h2>Talsyntes</h2>
+    <div class="test">
+      <div class="presets sfx" id="ttsPhrases"></div>
+      <div id="ttsRows" class="ttsrows"></div>
+      <p id="ttsStatus">Skriv egna meddelanden eller tryck på en fras. Texten läses upp genom den valda rösten och dess effekter. Meddelandena sparas i telefonen.</p>
+    </div>
   </section>
 
   <section>
@@ -336,6 +349,7 @@ let mode = 'toggle';   // 'toggle' = av/på, 'ptt' = håll för att prata
 let live = false;      // av/på-läget: rösten är på
 let held = false;      // håll-läget: knappen hålls inne
 let wakeLock = null;
+let ttsPlaying = false;  // talsyntes spelas: mikrofonen tystas och högtalaren öppnas
 let testState = 'idle'; // provlyssning: 'idle' | 'rec' | 'tail' | 'play'
 const isOpen = () => !!audio && (mode === 'ptt' ? held : live);
 
@@ -413,7 +427,10 @@ async function buildAudio() {
 
   src.connect(hp);
   hp.connect(inAnalyser);
-  hp.connect(gate);
+  // micMute tystar mikrofonen medan talsyntesen pratar; ttsIn är där talsyntesen kommer in i röstkedjan
+  const micMute = ctx.createGain(), ttsIn = gain(ctx, 0.35); // eSpeak ger fullt utslag, mikrofonen ligger lägre
+  hp.connect(micMute); micMute.connect(gate);
+  ttsIn.connect(pitchNode || voice); ttsIn.connect(dry);
   if (pitchNode) { gate.connect(pitchNode); pitchNode.connect(voice); } else { gate.connect(voice); }
   gate.connect(dry); dry.connect(voice);
   voice.connect(shaper);
@@ -438,7 +455,7 @@ async function buildAudio() {
   sfx.connect(sfxConv); sfxConv.connect(sfxRevLp); sfxRevLp.connect(sfxRev); sfxRev.connect(comp);
 
   return {
-    ctx, stream, pitchNode, recorder, shaper, ringWet, ringDry, fb, echoWet, revWet, master, dry, gate, sfx, comp,
+    ctx, stream, pitchNode, recorder, shaper, ringWet, ringDry, fb, echoWet, revWet, master, dry, gate, sfx, comp, micMute, ttsIn,
     inAnalyser, inBuf: new Float32Array(inAnalyser.fftSize), lastDist: -1,
   };
 }
@@ -460,7 +477,8 @@ function apply() {
   audio.fb.gain.setTargetAtTime(e * 0.55, t, s);
   audio.revWet.gain.setTargetAtTime(v.reverb / 100 * 1.2, t, s);
   // Under provinspelning är högtalaren tyst, annars tjuter det i telefonen
-  const toSpeaker = isOpen() && testState !== 'rec' && testState !== 'tail';
+  const toSpeaker = (isOpen() || ttsPlaying) && testState !== 'rec' && testState !== 'tail';
+  audio.micMute.gain.setTargetAtTime(ttsPlaying ? 0 : 1, t, 0.01);
   audio.master.gain.setTargetAtTime(toSpeaker ? v.vol / 100 : 0, t, mode === 'ptt' ? 0.015 : s);
   audio.sfx.gain.setTargetAtTime(v.vol / 100 * v.sfxVol / 100, t, s);
 }
@@ -783,6 +801,63 @@ function voiceLight(open) {
   }
 }
 
+// ---------- Talsyntes: eSpeak (svensk röst) körs i webbläsaren och ger ljudet som data, ----------
+// så det kan gå genom samma kedja som mikrofonen. Webbläsarens egen talsyntes går inte att filtrera.
+// Laddas först när den används (~1,8 MB).
+const MESPEAK = 'https://cdn.jsdelivr.net/npm/mespeak@2.0.2';
+const TTS_PHRASES = ['Bus eller godis?', 'Välkommen… om du vågar.', 'Jag ser dig.', 'Ta bara en godisbit!', 'Ingen kommer härifrån levande.', 'Mo ha ha ha ha!'];
+const TTS_KEY = 'spokrosten.tal';
+const TTS_DEFAULTS = ['Välkommen till spökhuset. Ingen kommer härifrån levande.', 'Ta bara en godisbit… annars kommer jag och hämtar dig.', 'Vänd dig inte om. Jag står precis bakom dig.'];
+let ttsSrc = null, ttsBtnActive = null;
+function loadTts() {
+  if (!loadTts.p) {
+    loadTts.p = (async () => {
+      const [mod, cfg, voice] = await Promise.all([
+        import(MESPEAK + '/+esm'),
+        fetch(MESPEAK + '/src/mespeak_config.json').then(r => r.json()),
+        fetch(MESPEAK + '/voices/sv.json').then(r => r.json()),
+      ]);
+      const m = mod.default;
+      m.loadConfig(cfg); m.loadVoice(voice);
+      return m;
+    })();
+    loadTts.p.catch(() => { loadTts.p = null; });
+  }
+  return loadTts.p;
+}
+function ttsDone() {
+  ttsSrc = null; ttsPlaying = false;
+  if (ttsBtnActive) { ttsBtnActive.classList.remove('play'); ttsBtnActive.textContent = 'Säg'; ttsBtnActive = null; }
+  apply(); voiceLight(isOpen());
+}
+async function sayText(text, btn = null) {
+  text = text.trim();
+  if (!text) return;
+  if (ttsSrc) { const s = ttsSrc; ttsSrc = null; s.onended = null; s.stop(); ttsDone(); }
+  if (!audio) {
+    try { await ensureAudio(); } catch (e) { fail(e); return; }
+    update();
+  } else audio.ctx.resume();
+  const st = $('ttsStatus');
+  try {
+    if (!loadTts.p) st.textContent = 'Laddar talsyntesen första gången…';
+    const m = await loadTts();
+    const wav = m.speak(text, { rawdata: 'array', pitch: 35, speed: 145, wordgap: 1 });
+    if (!wav) throw new Error('talsyntesen gav inget ljud');
+    const buf = await audio.ctx.decodeAudioData(new Uint8Array(wav).buffer);
+    const src = audio.ctx.createBufferSource();
+    src.buffer = buf; src.connect(audio.ttsIn);
+    src.onended = () => { if (ttsSrc === src) ttsDone(); };
+    ttsSrc = src; ttsPlaying = true;
+    if (btn) { ttsBtnActive = btn; btn.classList.add('play'); btn.textContent = 'Stopp'; }
+    apply(); voiceLight(true);
+    src.start();
+    st.textContent = 'Säger: ' + text;
+  } catch (e) {
+    st.textContent = 'Talsyntesen fungerade inte: ' + e.message;
+  }
+}
+
 // ---------- Provlyssna: håll, prata, släpp, hör ----------
 const TEST_MAX = 15;   // sekunder
 const TEST_TAIL = 0.7; // spela in lite efter släpp så eko och klang hinner klinga ut
@@ -1006,6 +1081,33 @@ SFX.forEach(s => {
   b.innerHTML = `<b>${s.name}</b><span>${s.desc}</span>`;
   b.addEventListener('click', () => playSfx(s, b));
   sfxEl.appendChild(b);
+});
+TTS_PHRASES.forEach(t => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'preset';
+  b.innerHTML = `<b>${t}</b>`;
+  b.addEventListener('click', () => sayText(t));
+  $('ttsPhrases').appendChild(b);
+});
+// Tre egna meddelanden, var och ett med egen knapp
+let ttsSaved = [];
+try { ttsSaved = JSON.parse(localStorage.getItem(TTS_KEY)) || []; } catch (_) {}
+const ttsAreas = TTS_DEFAULTS.map((def, i) => {
+  const row = document.createElement('div'); row.className = 'ttsrow';
+  const ta = document.createElement('textarea');
+  ta.className = 'ttstext'; ta.rows = 2; ta.spellcheck = false;
+  ta.setAttribute('aria-label', 'Meddelande ' + (i + 1));
+  ta.value = typeof ttsSaved[i] === 'string' ? ttsSaved[i] : def;
+  ta.addEventListener('input', () => { try { localStorage.setItem(TTS_KEY, JSON.stringify(ttsAreas.map(a => a.value))); } catch (_) {} });
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'testbtn'; b.textContent = 'Säg';
+  b.addEventListener('click', () => {
+    const mine = ttsBtnActive === b;
+    if (ttsSrc) { const s = ttsSrc; s.onended = null; s.stop(); ttsDone(); }
+    if (!mine) sayText(ta.value, b);
+  });
+  row.append(ta, b); $('ttsRows').appendChild(row);
+  return ta;
 });
 const lightsEl = $('lights');
 LIGHTS.forEach(l => {
