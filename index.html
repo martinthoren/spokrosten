@@ -231,6 +231,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--candle); ou
       <hr>
       <div class="ctl"><label for="gate">Brusspärr <output id="gateOut"></output></label><input id="gate" type="range" min="0" max="100" step="1" value="35"><small>Tystar mikrofonen när du inte pratar. Lägg strecket strax över mätaren när det är tyst.</small></div>
       <div class="ctl"><label for="vol">Volym <output id="volOut"></output></label><input id="vol" type="range" min="0" max="300" step="5" value="150"></div>
+      <div class="ctl"><label for="sfxVol">Ljudeffekter <output id="sfxVolOut"></output></label><input id="sfxVol" type="range" min="0" max="400" step="10" value="200"><small>Ljudbankens styrka jämfört med rösten.</small></div>
     </div>
   </section>
 
@@ -320,8 +321,8 @@ const PRESETS = [
 ];
 
 const $ = id => document.getElementById(id);
-const sliders = ['pitch', 'blend', 'dist', 'robot', 'echo', 'reverb', 'gate', 'vol'];
-const NOT_IN_PRESET = ['gate', 'vol']; // beror på rummet, inte på rösten
+const sliders = ['pitch', 'blend', 'dist', 'robot', 'echo', 'reverb', 'gate', 'vol', 'sfxVol'];
+const NOT_IN_PRESET = ['gate', 'vol', 'sfxVol']; // beror på rummet, inte på rösten
 const gateDb = v => -65 + v * 0.4;    // reglage 1–100 → tröskel −65…−25 dB
 const fmt = {
   pitch: v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v) + ' halvtoner',
@@ -461,7 +462,7 @@ function apply() {
   // Under provinspelning är högtalaren tyst, annars tjuter det i telefonen
   const toSpeaker = isOpen() && testState !== 'rec' && testState !== 'tail';
   audio.master.gain.setTargetAtTime(toSpeaker ? v.vol / 100 : 0, t, mode === 'ptt' ? 0.015 : s);
-  audio.sfx.gain.setTargetAtTime(v.vol / 100, t, s);
+  audio.sfx.gain.setTargetAtTime(v.vol / 100 * v.sfxVol / 100, t, s);
 }
 
 // ---------- Ljudbank (allt syntetiseras, inga ljudfiler) ----------
