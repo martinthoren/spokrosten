@@ -605,6 +605,8 @@ const LIGHTS = [
   { id: 'flimmer', name: 'Flimmer',   desc: 'Lampan krånglar',   a: { type: 'scene', num: 1, mode: 'jump', speed: 100, units: [
       // Bara fullt vitt (P) och nästan svart (M). Upprepningar ger ett oregelbundet, trasigt mönster.
       ...'PMPMMPPM'.split('').map(c => c === 'P' ? { h: 0, s: 0, v: 1 } : { h: 0, s: 0, v: 0.01 }) ] } },
+  { id: 'strobe',  name: 'Strobe',    desc: 'Blinkar för fullt', a: { type: 'scene', num: 5, mode: 'jump', speed: 100, units:
+      'PMPMPMPM'.split('').map(c => c === 'P' ? { h: 0, s: 0, v: 1 } : { h: 0, s: 0, v: 0.01 }) } },
   { id: 'puls',    name: 'Puls',      desc: 'Rött som andas',    a: { type: 'scene', num: 2, mode: 'gradient', speed: 40, units: [{ h: 0, s: 1, v: 1 }, { h: 0, s: 1, v: 0.05 }] } },
   { id: 'slack',   name: 'Släck',     desc: 'Kolsvart',          a: { type: 'off' } },
 ];
