@@ -191,12 +191,18 @@ export default {
       // Snabbt av/på direkt från workern. Cloudflares gratisplan tillåter ~50 utgående anrop
       // per förfrågan, så antalet växlingar delas mellan lamporna.
       if (req.method === 'POST' && path === '/blink') {
-        const { targets, count } = await req.json();
+        // prep (valfri): en åtgärd som körs först, t.ex. {type:'color', h:0, s:1, v:1} för röd strobe
+        const { targets, count, prep } = await req.json();
         const chosen = Array.isArray(targets) && targets.length ? targets.map(i => ids[i]).filter(Boolean) : ids;
         await getToken(env);
-        const n = Math.max(2, Math.min(Math.floor(44 / chosen.length), Number(count) || 20)) & ~1; // jämnt antal, slutar tänd
+        const budget = 44 - (prep ? 2 * chosen.length : 0); // prep kan kosta två anrop per lampa (funktioner + kommando)
+        const n = Math.max(2, Math.min(Math.floor(budget / chosen.length), Number(count) || 20)) & ~1; // jämnt antal, slutar tänd
         const errors = [], t0 = Date.now();
         await Promise.all(chosen.map(async id => {
+          if (prep) {
+            try { await tuya(env, 'POST', `/v1.0/devices/${id}/commands`, { commands: commandsFor(prep, await codesFor(env, id)) }); }
+            catch (e) { errors.push(e.message); return; }
+          }
           for (let i = 0; i < n; i++) {
             try { await tuya(env, 'POST', `/v1.0/devices/${id}/commands`, { commands: [{ code: 'switch_led', value: i % 2 === 1 }] }); }
             catch (e) { errors.push(e.message); break; }

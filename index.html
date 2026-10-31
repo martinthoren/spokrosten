@@ -598,8 +598,9 @@ async function playSfx(s, btn) {
 
 // ---------- Ljus: smarta lampor via proxyn i lampor/worker.js ----------
 // Scenhastighet 0–100: högre = snabbare (100 är max, uppmätt på Cleverio).
-const strobeUnits = (h, s) => 'PMPMPMPM'.split('').map(c => ({ h, s, v: c === 'P' ? 1 : 0.01 }));
-const RED_STROBE = { type: 'scene', num: 6, mode: 'jump', speed: 100, units: strobeUnits(0, 1) };
+// Strobe körs inte som scen utan som snabbt av/på från workern (~94 ms per växling, uppmätt).
+const strobe = (h, s) => ({ type: 'strobe', h, s, v: 1 });
+const RED_STROBE = strobe(0, 1);
 const LIGHTS = [
   { id: 'varm',    name: 'Varmt',     desc: 'Vanligt ljus',      a: { type: 'white', v: 0.8, temp: 0.1 } },
   { id: 'rod',     name: 'Blodrött',  desc: 'Djupt rött',        a: { type: 'color', h: 0, s: 1, v: 1 } },
@@ -609,15 +610,14 @@ const LIGHTS = [
   { id: 'flimmer', name: 'Flimmer',   desc: 'Lampan krånglar',   a: { type: 'scene', num: 1, mode: 'jump', speed: 100, units: [
       // Bara fullt vitt (P) och nästan svart (M). Upprepningar ger ett oregelbundet, trasigt mönster.
       ...'PMPMMPPM'.split('').map(c => c === 'P' ? { h: 0, s: 0, v: 1 } : { h: 0, s: 0, v: 0.01 }) ] } },
-  { id: 'strobe',  name: 'Strobe',    desc: 'Blinkar för fullt', a: { type: 'scene', num: 5, mode: 'jump', speed: 100, units:
-      strobeUnits(0, 0) } },
+  { id: 'strobe',  name: 'Strobe',    desc: 'Blinkar för fullt', a: strobe(0, 0) },
   { id: 'rodstrobe', name: 'Röd strobe', desc: 'Blinkar blodrött', a: RED_STROBE },
   { id: 'puls',    name: 'Puls',      desc: 'Rött som andas',    a: { type: 'scene', num: 2, mode: 'gradient', speed: 40, units: [{ h: 0, s: 1, v: 1 }, { h: 0, s: 1, v: 0.05 }] } },
   { id: 'slack',   name: 'Släck',     desc: 'Kolsvart',          a: { type: 'off' } },
 ];
 // Vad ljuset gör när ett ljud i ljudbanken spelas; sedan återgår det till senast valda ljus
 const SFX_LIGHT = {
-  skrik:  { type: 'scene', num: 3, mode: 'jump', speed: 100, units: [{ h: 0, s: 1, v: 1 }, { h: 0, s: 0, v: 1 }, { h: 0, s: 1, v: 0.02 }] },
+  skrik:  RED_STROBE,
   skratt: { type: 'scene', num: 4, mode: 'gradient', speed: 75, units: [{ h: 100, s: 1, v: 1 }, { h: 100, s: 1, v: 0.1 }] },
   knack:  { type: 'off' },
   dorr:   'flimmer',
@@ -694,7 +694,7 @@ async function sendLight(action, { ambient = true, label = '' } = {}) {
   const targets = lightTarget === 'all' ? undefined : [Number(lightTarget)];
   if (ambient) { lastAmbient = { action, targets }; clearTimeout(restoreTimer); }
   try {
-    const { results } = await lightApi('/light', { action, targets });
+    const { results } = await lightDo({ action, targets });
     const failed = results.filter(r => !r.ok);
     if (failed.length) lightStatus((failed.length === results.length ? 'Lamporna svarade inte: ' : 'En lampa svarade inte: ') + failed[0].error, 'err');
     else if (label) lightStatus(label + ' ✓', 'ok');
@@ -705,6 +705,35 @@ async function sendLight(action, { ambient = true, label = '' } = {}) {
   }
 }
 
+// ---------- Strobe: korta stötar (~1 s) efter varandra så den kan stoppas snabbt ----------
+const STROBE_MAX_MS = 30000; // säkerhetsgräns, sparar också på Tuyas anropskvot
+let strobeRun = 0, strobeInflight = null;
+function stopStrobe() { strobeRun++; }
+async function runStrobe(action, targets) {
+  const run = ++strobeRun, t0 = Date.now();
+  let prep = { type: 'color', h: action.h, s: action.s, v: action.v };
+  while (run === strobeRun && Date.now() - t0 < STROBE_MAX_MS) {
+    try {
+      strobeInflight = lightApi('/blink', { count: 10, targets, prep });
+      const r = await strobeInflight;
+      if (r.error) throw new Error(r.error);
+      if (r.errors && r.errors.length) throw new Error(r.errors[0]);
+    } catch (e) {
+      if (run === strobeRun) lightStatus('Stroben stannade: ' + e.message + ' (har du klistrat in nya worker.js?)', 'err');
+      return;
+    }
+    prep = undefined;
+  }
+}
+// Alla ljusbyten går hit: stoppar en pågående strobe och väntar ut dess sista stöt,
+// annars kan stötens sista "tänd" skriva över t.ex. Släck.
+async function lightDo(entry) {
+  stopStrobe();
+  if (strobeInflight) await strobeInflight.catch(() => {});
+  if (entry.action.type === 'strobe') { runStrobe(entry.action, entry.targets); return { results: [{ ok: true }] }; }
+  return lightApi('/light', entry);
+}
+
 function lightForSfx(s) {
   if (!lightCfg || !$('lightFollow').checked || !SFX_LIGHT[s.id]) return;
   let a = SFX_LIGHT[s.id];
@@ -713,7 +742,7 @@ function lightForSfx(s) {
   sendLight(a, { ambient: false });
   restoreTimer = setTimeout(() => {
     const back = voiceLightOn ? { action: RED_STROBE } : lastAmbient;
-    if (back) lightApi('/light', back).catch(() => {});
+    if (back) lightDo(back).catch(() => {});
   }, (s.dur + 1.5) * 1000);
 }
 
@@ -728,7 +757,7 @@ function voiceLight(open) {
   } else if (voiceLightOn) {
     voiceLightTimer = setTimeout(() => {
       voiceLightOn = false;
-      lightApi('/light', lastAmbient || { action: LIGHTS.find(l => l.id === 'varm').a }).catch(() => {});
+      lightDo(lastAmbient || { action: LIGHTS.find(l => l.id === 'varm').a }).catch(() => {});
     }, 600);
   }
 }
@@ -985,7 +1014,7 @@ $('lightForget').addEventListener('click', () => {
 connectLights();
 $('lightVoice').addEventListener('change', () => {
   if ($('lightVoice').checked) { voiceLight(isOpen()); return; }
-  if (voiceLightOn) { voiceLightOn = false; lightApi('/light', lastAmbient || { action: LIGHTS.find(l => l.id === 'varm').a }).catch(() => {}); }
+  if (voiceLightOn) { voiceLightOn = false; lightDo(lastAmbient || { action: LIGHTS.find(l => l.id === 'varm').a }).catch(() => {}); }
 });
 
 function renderLab() {
