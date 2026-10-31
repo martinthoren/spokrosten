@@ -188,6 +188,24 @@ export default {
         return json({ devices }, 200, h);
       }
 
+      // Snabbt av/på direkt från workern. Cloudflares gratisplan tillåter ~50 utgående anrop
+      // per förfrågan, så antalet växlingar delas mellan lamporna.
+      if (req.method === 'POST' && path === '/blink') {
+        const { targets, count } = await req.json();
+        const chosen = Array.isArray(targets) && targets.length ? targets.map(i => ids[i]).filter(Boolean) : ids;
+        await getToken(env);
+        const n = Math.max(2, Math.min(Math.floor(44 / chosen.length), Number(count) || 20)) & ~1; // jämnt antal, slutar tänd
+        const errors = [], t0 = Date.now();
+        await Promise.all(chosen.map(async id => {
+          for (let i = 0; i < n; i++) {
+            try { await tuya(env, 'POST', `/v1.0/devices/${id}/commands`, { commands: [{ code: 'switch_led', value: i % 2 === 1 }] }); }
+            catch (e) { errors.push(e.message); break; }
+          }
+        }));
+        const ms = Date.now() - t0;
+        return json({ count: n, ms, perCommand: Math.round(ms / n), errors: [...new Set(errors)] }, errors.length === chosen.length ? 502 : 200, h);
+      }
+
       if (req.method === 'POST' && path === '/light') {
         const { action, targets } = await req.json();
         if (!action || typeof action.type !== 'string') return json({ error: 'Saknar åtgärd' }, 400, h);

@@ -209,6 +209,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--candle); ou
               <button type="button" id="labTry" class="testbtn">Testa flimmer</button>
               <button type="button" id="labRead" class="linkbtn">Läs av lampan</button>
             </div>
+            <button type="button" id="labBlink" class="testbtn">Molnblink (test): snabbt av/på</button>
             <pre id="labOut" hidden></pre>
             <button type="button" id="labCopy" class="linkbtn" hidden>Kopiera avläsningen</button>
           </div>
@@ -1007,6 +1008,19 @@ $('labRead').addEventListener('click', async () => {
     lightStatus('Avläst. Kopiera och skicka till Claude.', 'ok');
   } catch (e) {
     lightStatus('Kunde inte läsa av: ' + e.message + ' (har du klistrat in nya worker.js?)', 'err');
+  }
+});
+$('labBlink').addEventListener('click', async () => {
+  if (!lightCfg) { lightStatus('Koppla in lamporna först.', 'err'); return; }
+  lightStatus('Molnblinkar…');
+  try {
+    const targets = lightTarget === 'all' ? undefined : [Number(lightTarget)];
+    const r = await lightApi('/blink', { count: 44, targets });
+    if (r.error) throw new Error(r.error);
+    lightStatus(`Molnblink: ${r.count} växlingar på ${(r.ms / 1000).toFixed(1)} s, ${r.perCommand} ms per växling` +
+      (r.errors.length ? '. Fel: ' + r.errors.join('; ') : ''), r.errors.length ? 'err' : 'ok');
+  } catch (e) {
+    lightStatus('Molnblink fungerade inte: ' + e.message + ' (har du klistrat in nya worker.js?)', 'err');
   }
 });
 $('labCopy').addEventListener('click', async () => {
