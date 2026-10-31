@@ -95,6 +95,18 @@ h2 { font: 700 .78rem/1 var(--body); text-transform: uppercase; letter-spacing: 
 .controls hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
 input[type=range] { width: 100%; accent-color: var(--candle); height: 28px; }
 
+/* Provlyssna */
+.test { display: grid; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+.testbtn {
+  font: 700 1rem/1.2 var(--body); color: var(--fg); background: #141b16; cursor: pointer;
+  border: 2px solid var(--candle-deep); border-radius: 999px; padding: 16px 20px; min-height: 56px;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent; transition: border-color .2s, background .2s, box-shadow .2s;
+}
+.testbtn.rec { border-color: var(--live); background: #2a1814; box-shadow: 0 0 24px rgba(217,65,43,.35); }
+.testbtn.play { border-color: var(--candle); background: #241f14; }
+#testStatus { margin: 0; color: var(--muted); font-size: .88rem; }
+
 .tips { color: var(--muted); font-size: .88rem; display: grid; gap: 6px; }
 .tips p { margin: 0; }
 .tips strong { color: var(--fg); font-weight: 500; }
@@ -125,6 +137,14 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--candle); ou
   <section>
     <h2>Röster</h2>
     <div class="presets" id="presets"></div>
+  </section>
+
+  <section>
+    <h2>Provlyssna</h2>
+    <div class="test">
+      <button id="testBtn" type="button" class="testbtn">Håll för att spela in</button>
+      <p id="testStatus">Håll inne, säg något, släpp. Du hör direkt hur rösten låter. Koppla bort blåtand först, så spelas det upp i telefonen.</p>
+    </div>
   </section>
 
   <section>
@@ -199,6 +219,27 @@ class PitchShifter extends AudioWorkletProcessor {
   }
 }
 registerProcessor('pitch-shifter', PitchShifter);
+
+// Provlyssning: skickar den färdiga rösten i bitar till sidan medan inspelning pågår
+class Recorder extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.on = false; this.buf = new Float32Array(4096); this.n = 0;
+    this.port.onmessage = e => { this.on = e.data; if (!this.on) this.flush(); };
+  }
+  flush() { if (this.n) { this.port.postMessage(this.buf.slice(0, this.n)); this.n = 0; } }
+  process(inputs) {
+    const inp = inputs[0];
+    if (!this.on || !inp || !inp[0]) return true;
+    const a = inp[0], b = inp[1] || a;
+    for (let i = 0; i < a.length; i++) {
+      this.buf[this.n++] = (a[i] + b[i]) * 0.5;
+      if (this.n === this.buf.length) this.flush();
+    }
+    return true;
+  }
+}
+registerProcessor('recorder', Recorder);
 `;
 
 // ---------- Röster ----------
@@ -227,6 +268,7 @@ let mode = 'toggle';   // 'toggle' = av/på, 'ptt' = håll för att prata
 let live = false;      // av/på-läget: rösten är på
 let held = false;      // håll-läget: knappen hålls inne
 let wakeLock = null;
+let testState = 'idle'; // provlyssning: 'idle' | 'rec' | 'tail' | 'play'
 const isOpen = () => !!audio && (mode === 'ptt' ? held : live);
 
 function currentValues() {
@@ -260,12 +302,13 @@ async function buildAudio() {
   });
   const src = ctx.createMediaStreamSource(stream);
 
-  let pitchNode = null;
+  let pitchNode = null, recorder = null;
   if (ctx.audioWorklet) {
     try {
       const url = URL.createObjectURL(new Blob([workletSrc], { type: 'application/javascript' }));
       await ctx.audioWorklet.addModule(url);
       pitchNode = new AudioWorkletNode(ctx, 'pitch-shifter', { outputChannelCount: [1] });
+      recorder = new AudioWorkletNode(ctx, 'recorder', { numberOfOutputs: 1, outputChannelCount: [1] });
     } catch (e) { console.warn('Tonhöjd ej tillgänglig', e); }
   }
 
@@ -309,10 +352,14 @@ async function buildAudio() {
   shaper.connect(pre);
   pre.connect(ringDry); pre.connect(ring); ring.connect(ringWet);
   ringDry.connect(mid); ringWet.connect(mid);
-  mid.connect(master);
-  mid.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(echoWet); echoWet.connect(master);
-  mid.connect(conv); conv.connect(revLp); revLp.connect(revWet); revWet.connect(master);
+  // wet = färdig röst med eko och klang; går både till högtalaren (via master) och till provlyssningen
+  const wet = ctx.createGain();
+  mid.connect(wet);
+  mid.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(echoWet); echoWet.connect(wet);
+  mid.connect(conv); conv.connect(revLp); revLp.connect(revWet); revWet.connect(wet);
+  wet.connect(master);
   master.connect(comp); comp.connect(ctx.destination);
+  if (recorder) { const sink = gain(ctx, 0); wet.connect(recorder); recorder.connect(sink); sink.connect(ctx.destination); }
 
   // Ljudbank: egen buss förbi röstens av/på, med en egen lätt klang
   const sfx = ctx.createGain();
@@ -323,7 +370,7 @@ async function buildAudio() {
   sfx.connect(sfxConv); sfxConv.connect(sfxRevLp); sfxRevLp.connect(sfxRev); sfxRev.connect(comp);
 
   return {
-    ctx, stream, pitchNode, shaper, ringWet, ringDry, fb, echoWet, revWet, master, dry, gate, sfx,
+    ctx, stream, pitchNode, recorder, shaper, ringWet, ringDry, fb, echoWet, revWet, master, dry, gate, sfx, comp,
     inAnalyser, inBuf: new Float32Array(inAnalyser.fftSize), lastDist: -1,
   };
 }
@@ -344,7 +391,9 @@ function apply() {
   audio.echoWet.gain.setTargetAtTime(e * 0.7, t, s);
   audio.fb.gain.setTargetAtTime(e * 0.55, t, s);
   audio.revWet.gain.setTargetAtTime(v.reverb / 100 * 1.2, t, s);
-  audio.master.gain.setTargetAtTime(isOpen() ? v.vol / 100 : 0, t, mode === 'ptt' ? 0.015 : s);
+  // Under provinspelning är högtalaren tyst, annars tjuter det i telefonen
+  const toSpeaker = isOpen() && testState !== 'rec' && testState !== 'tail';
+  audio.master.gain.setTargetAtTime(toSpeaker ? v.vol / 100 : 0, t, mode === 'ptt' ? 0.015 : s);
   audio.sfx.gain.setTargetAtTime(v.vol / 100, t, s);
 }
 
@@ -479,6 +528,79 @@ async function playSfx(s, btn) {
   setTimeout(() => out.disconnect(), (s.dur + 1) * 1000);
 }
 
+// ---------- Provlyssna: håll, prata, släpp, hör ----------
+const TEST_MAX = 15;   // sekunder
+const TEST_TAIL = 0.7; // spela in lite efter släpp så eko och klang hinner klinga ut
+let testChunks = [], testSrc = null, testTimer = null, testListening = false;
+
+function renderTest(text) {
+  const b = $('testBtn');
+  b.classList.toggle('rec', testState === 'rec' || testState === 'tail');
+  b.classList.toggle('play', testState === 'play');
+  b.textContent = !audio ? 'Tryck för att börja'
+    : testState === 'rec' ? 'Spelar in… släpp för att lyssna'
+    : testState === 'tail' ? 'Klingar ut…'
+    : testState === 'play' ? 'Spelar upp (håll för ny)'
+    : 'Håll för att spela in';
+  if (text) $('testStatus').textContent = text;
+}
+
+function testDown() {
+  if (!audio) return;
+  if (!audio.recorder) { renderTest('Provlyssning stöds inte i den här webbläsaren.'); return; }
+  if (testState === 'rec' || testState === 'tail') return;
+  if (testSrc) { try { testSrc.stop(); } catch (_) {} testSrc = null; }
+  if (!testListening) {
+    testListening = true;
+    audio.recorder.port.onmessage = e => { if (testState === 'rec' || testState === 'tail') testChunks.push(e.data); };
+  }
+  audio.ctx.resume();
+  testChunks = [];
+  testState = 'rec';
+  audio.recorder.port.postMessage(true);
+  apply();
+  renderTest('Prata nu. Högtalaren är tyst medan du spelar in.');
+  clearTimeout(testTimer);
+  testTimer = setTimeout(testUp, TEST_MAX * 1000);
+}
+
+function testUp() {
+  if (testState !== 'rec') return;
+  clearTimeout(testTimer);
+  testState = 'tail';
+  renderTest();
+  setTimeout(() => {
+    audio.recorder.port.postMessage(false);
+    setTimeout(testPlay, 60); // vänta in sista biten från inspelningen
+  }, TEST_TAIL * 1000);
+}
+
+function testPlay() {
+  const len = testChunks.reduce((n, c) => n + c.length, 0);
+  if (len < audio.ctx.sampleRate * 0.2) {
+    testState = 'idle'; apply();
+    renderTest('För kort. Håll inne knappen medan du pratar.');
+    return;
+  }
+  const buf = audio.ctx.createBuffer(1, len, audio.ctx.sampleRate), d = buf.getChannelData(0);
+  let o = 0; testChunks.forEach(c => { d.set(c, o); o += c.length; });
+  testChunks = [];
+  const src = audio.ctx.createBufferSource(); src.buffer = buf;
+  const vol = gain(audio.ctx, Number($('vol').value) / 100);
+  src.connect(vol); vol.connect(audio.comp);
+  src.onended = () => {
+    vol.disconnect();
+    if (testSrc !== src) return;
+    testSrc = null; testState = 'idle'; apply();
+    renderTest('Klart. Byt röst eller finjustera och testa igen.');
+  };
+  testSrc = src;
+  testState = 'play';
+  apply();
+  src.start();
+  renderTest('Så här låter du (' + (len / audio.ctx.sampleRate).toFixed(1) + ' s).');
+}
+
 function selectPreset(id) {
   const p = PRESETS.find(x => x.id === id);
   Object.entries(p.v).forEach(([k, val]) => $(k).value = val);
@@ -555,6 +677,7 @@ function render() {
   $('micLabel').textContent = label;
   $('micState').textContent = state;
   setStatus(text);
+  renderTest();
 }
 
 function update() { apply(); render(); syncWakeLock(); }
@@ -659,8 +782,30 @@ micBtn.addEventListener('keyup', e => {
 });
 micBtn.addEventListener('blur', release);
 
+const testBtn = $('testBtn');
+testBtn.addEventListener('click', () => { if (!audio) prepare(); });
+testBtn.addEventListener('pointerdown', e => {
+  if (!audio) return;
+  e.preventDefault();
+  try { testBtn.setPointerCapture(e.pointerId); } catch (_) {}
+  testDown();
+});
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => testBtn.addEventListener(ev, testUp));
+testBtn.addEventListener('contextmenu', e => e.preventDefault());
+testBtn.addEventListener('keydown', e => {
+  if (!audio || (e.key !== ' ' && e.key !== 'Enter')) return;
+  e.preventDefault();
+  if (!e.repeat) testDown();
+});
+testBtn.addEventListener('keyup', e => {
+  if (e.key !== ' ' && e.key !== 'Enter') return;
+  e.preventDefault();
+  testUp();
+});
+testBtn.addEventListener('blur', testUp);
+
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') release();
+  if (document.visibilityState !== 'visible') { release(); testUp(); }
   syncWakeLock();
 });
 
