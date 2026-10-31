@@ -107,6 +107,28 @@ input[type=range] { width: 100%; accent-color: var(--candle); height: 28px; }
 .testbtn.play { border-color: var(--candle); background: #241f14; }
 #testStatus { margin: 0; color: var(--muted); font-size: .88rem; }
 
+/* Ljus */
+.lightbox { display: grid; gap: 12px; }
+.lightbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; }
+.lightbar .mode:empty { display: none; }
+.chk { display: inline-flex; gap: 8px; align-items: center; color: var(--muted); font-size: .9rem; cursor: pointer; }
+.chk input { accent-color: var(--candle); width: 18px; height: 18px; }
+#lightStatus { margin: 0; color: var(--muted); font-size: .88rem; }
+#lightStatus.err { color: #ff8a73; }
+#lightStatus.ok { color: var(--fg); }
+#lights .preset.sent { border-color: var(--candle); background: #241f14; }
+#lights .preset.sent b { color: var(--candle); }
+details { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; }
+summary { cursor: pointer; font-weight: 500; }
+.setup { display: grid; gap: 12px; padding-top: 12px; }
+.setup label { display: grid; gap: 6px; font-weight: 500; font-size: .9rem; }
+.setup input { font: inherit; color: var(--fg); background: #141b16; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; min-width: 0; }
+.setup small { color: var(--muted); font-size: .8rem; }
+.setup a { color: var(--candle); }
+.setup-btns { display: flex; gap: 12px; align-items: center; }
+.setup-btns .testbtn { flex: 1; padding: 12px 16px; min-height: 48px; }
+.linkbtn { font: inherit; color: var(--muted); background: none; border: 0; text-decoration: underline; cursor: pointer; padding: 8px; }
+
 .tips { color: var(--muted); font-size: .88rem; display: grid; gap: 6px; }
 .tips p { margin: 0; }
 .tips strong { color: var(--fg); font-weight: 500; }
@@ -150,6 +172,30 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--candle); ou
   <section>
     <h2>Ljudbank</h2>
     <div class="presets sfx" id="sfx"></div>
+  </section>
+
+  <section>
+    <h2>Ljus</h2>
+    <div class="lightbox">
+      <div class="presets sfx" id="lights"></div>
+      <div class="lightbar">
+        <div class="mode" id="lightTarget" role="group" aria-label="Vilka lampor"></div>
+        <label class="chk"><input type="checkbox" id="lightFollow" checked> Ljuset följer ljudbanken</label>
+      </div>
+      <p id="lightStatus" role="status">Lamporna är inte inkopplade än.</p>
+      <details id="lightSetup">
+        <summary>Koppla in lamporna</summary>
+        <div class="setup">
+          <label>Proxyns adress<input id="lightUrl" type="url" placeholder="https://spokrosten-lampor.namn.workers.dev" autocomplete="off" spellcheck="false"></label>
+          <label>Nyckel (APP_TOKEN)<input id="lightToken" type="password" autocomplete="off" spellcheck="false"></label>
+          <div class="setup-btns">
+            <button type="button" id="lightSave" class="testbtn">Spara och testa</button>
+            <button type="button" id="lightForget" class="linkbtn">Glöm</button>
+          </div>
+          <small>Sparas bara i den här webbläsaren. Guiden finns i <a href="https://github.com/martinthoren/spokrosten/blob/main/lampor/README.md">lampor/README.md</a>.</small>
+        </div>
+      </details>
+    </div>
   </section>
 
   <section>
@@ -526,6 +572,114 @@ async function playSfx(s, btn) {
   clearTimeout(btn._t);
   btn._t = setTimeout(() => btn.classList.remove('playing'), s.dur * 1000);
   setTimeout(() => out.disconnect(), (s.dur + 1) * 1000);
+  lightForSfx(s);
+}
+
+// ---------- Ljus: smarta lampor via proxyn i lampor/worker.js ----------
+// Scenernas hastighet (0–100) är en gissning tills lamporna finns på plats.
+const LIGHTS = [
+  { id: 'varm',    name: 'Varmt',     desc: 'Vanligt ljus',      a: { type: 'white', v: 0.8, temp: 0.1 } },
+  { id: 'rod',     name: 'Blodrött',  desc: 'Djupt rött',        a: { type: 'color', h: 0, s: 1, v: 1 } },
+  { id: 'gron',    name: 'Giftgrönt', desc: 'Sjukligt grönt',    a: { type: 'color', h: 100, s: 1, v: 0.9 } },
+  { id: 'lila',    name: 'Spöklila',  desc: 'Kallt och blekt',   a: { type: 'color', h: 275, s: 0.7, v: 0.7 } },
+  { id: 'mane',    name: 'Månsken',   desc: 'Svagt blått',       a: { type: 'color', h: 220, s: 0.6, v: 0.25 } },
+  { id: 'flimmer', name: 'Flimmer',   desc: 'Lampan krånglar',   a: { type: 'scene', num: 1, mode: 'jump', speed: 20, units: [
+      { h: 35, s: 0.3, v: 1 }, { h: 35, s: 0.3, v: 0.05 }, { h: 35, s: 0.3, v: 0.8 }, { h: 35, s: 0.3, v: 0.02 }, { h: 35, s: 0.3, v: 1 }, { h: 35, s: 0.3, v: 0.1 } ] } },
+  { id: 'puls',    name: 'Puls',      desc: 'Rött som andas',    a: { type: 'scene', num: 2, mode: 'gradient', speed: 60, units: [{ h: 0, s: 1, v: 1 }, { h: 0, s: 1, v: 0.05 }] } },
+  { id: 'slack',   name: 'Släck',     desc: 'Kolsvart',          a: { type: 'off' } },
+];
+// Vad ljuset gör när ett ljud i ljudbanken spelas; sedan återgår det till senast valda ljus
+const SFX_LIGHT = {
+  skrik:  { type: 'scene', num: 3, mode: 'jump', speed: 5, units: [{ h: 0, s: 1, v: 1 }, { h: 0, s: 0, v: 1 }, { h: 0, s: 1, v: 0.02 }] },
+  skratt: { type: 'scene', num: 4, mode: 'gradient', speed: 30, units: [{ h: 100, s: 1, v: 1 }, { h: 100, s: 1, v: 0.1 }] },
+  knack:  { type: 'off' },
+  dorr:   'flimmer',
+  kedjor: 'mane',
+  hjarta: 'puls',
+  varg:   'mane',
+};
+
+const LIGHT_KEY = 'spokrosten.lampor';
+let lightCfg = null, lightDevices = [], lightTarget = 'all', lastAmbient = null, restoreTimer = null;
+try { lightCfg = JSON.parse(localStorage.getItem(LIGHT_KEY)); } catch (_) {}
+
+function lightStatus(text, cls = '') {
+  const s = $('lightStatus');
+  s.textContent = text;
+  s.className = cls;
+}
+
+async function lightApi(path, body) {
+  const res = await fetch(lightCfg.url.replace(/\/+$/, '') + path, {
+    method: body ? 'POST' : 'GET',
+    headers: { 'X-Spok-Token': lightCfg.token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data;
+  try { data = await res.json(); } catch (_) { throw new Error('Konstigt svar från proxyn (' + res.status + ')'); }
+  if (!res.ok && !data.results) throw new Error(data.error || 'Fel ' + res.status);
+  return data;
+}
+
+function renderLightTargets() {
+  const el = $('lightTarget');
+  el.innerHTML = '';
+  if (lightDevices.length < 2) { lightTarget = 'all'; return; }
+  [{ key: 'all', label: 'Alla' }, ...lightDevices.map(d => ({ key: String(d.index), label: d.name || 'Lampa ' + (d.index + 1) }))].forEach(o => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = o.label; b.dataset.key = o.key;
+    b.setAttribute('aria-pressed', String(o.key === lightTarget));
+    b.addEventListener('click', () => { lightTarget = o.key; renderLightTargets(); });
+    el.appendChild(b);
+  });
+}
+
+async function connectLights() {
+  if (!lightCfg || !lightCfg.url || !lightCfg.token) {
+    lightDevices = []; renderLightTargets();
+    lightStatus('Lamporna är inte inkopplade än.');
+    return;
+  }
+  lightStatus('Kontaktar lamporna…');
+  try {
+    const { devices } = await lightApi('/devices');
+    lightDevices = devices.filter(d => !d.error);
+    renderLightTargets();
+    const bad = devices.filter(d => d.error || !d.online);
+    const names = lightDevices.map(d => (d.name || 'Lampa ' + (d.index + 1)) + (d.online ? '' : ' (offline)')).join(', ');
+    if (!lightDevices.length) lightStatus('Hittade inga lampor: ' + (devices[0] && devices[0].error || 'kolla DEVICE_IDS'), 'err');
+    else lightStatus((bad.length ? 'Delvis inkopplat: ' : 'Inkopplat: ') + names + (devices.some(d => d.error) ? '. Fel: ' + devices.filter(d => d.error).map(d => d.error).join('; ') : ''), bad.length ? 'err' : 'ok');
+  } catch (e) {
+    lightStatus('Kunde inte nå lamporna: ' + e.message, 'err');
+  }
+}
+
+async function sendLight(action, { ambient = true, label = '' } = {}) {
+  if (!lightCfg) { lightStatus('Koppla in lamporna först (längst ner i rutan).', 'err'); return false; }
+  const targets = lightTarget === 'all' ? undefined : [Number(lightTarget)];
+  if (ambient) { lastAmbient = { action, targets }; clearTimeout(restoreTimer); }
+  try {
+    const { results } = await lightApi('/light', { action, targets });
+    const failed = results.filter(r => !r.ok);
+    if (failed.length) lightStatus((failed.length === results.length ? 'Lamporna svarade inte: ' : 'En lampa svarade inte: ') + failed[0].error, 'err');
+    else if (label) lightStatus(label + ' ✓', 'ok');
+    return !failed.length;
+  } catch (e) {
+    lightStatus('Kunde inte nå lamporna: ' + e.message, 'err');
+    return false;
+  }
+}
+
+function lightForSfx(s) {
+  if (!lightCfg || !$('lightFollow').checked || !SFX_LIGHT[s.id]) return;
+  let a = SFX_LIGHT[s.id];
+  if (typeof a === 'string') a = LIGHTS.find(l => l.id === a).a;
+  clearTimeout(restoreTimer);
+  sendLight(a, { ambient: false });
+  if (lastAmbient) {
+    const back = lastAmbient;
+    restoreTimer = setTimeout(() => lightApi('/light', back).catch(() => {}), (s.dur + 1.5) * 1000);
+  }
 }
 
 // ---------- Provlyssna: håll, prata, släpp, hör ----------
@@ -751,6 +905,34 @@ SFX.forEach(s => {
   b.addEventListener('click', () => playSfx(s, b));
   sfxEl.appendChild(b);
 });
+const lightsEl = $('lights');
+LIGHTS.forEach(l => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'preset';
+  b.innerHTML = `<b>${l.name}</b><span>${l.desc}</span>`;
+  b.addEventListener('click', async () => {
+    lightsEl.querySelectorAll('.preset').forEach(x => x.classList.remove('sent'));
+    if (await sendLight(l.a, { label: l.name })) b.classList.add('sent');
+  });
+  lightsEl.appendChild(b);
+});
+if (lightCfg) { $('lightUrl').value = lightCfg.url || ''; $('lightToken').value = lightCfg.token || ''; }
+else $('lightSetup').open = true;
+$('lightSave').addEventListener('click', () => {
+  const url = $('lightUrl').value.trim(), token = $('lightToken').value.trim();
+  if (!/^(https:\/\/|http:\/\/localhost[:/])/.test(url) || !token) { lightStatus('Fyll i proxyns https-adress och nyckeln.', 'err'); return; }
+  lightCfg = { url, token };
+  try { localStorage.setItem(LIGHT_KEY, JSON.stringify(lightCfg)); } catch (_) {}
+  connectLights();
+});
+$('lightForget').addEventListener('click', () => {
+  lightCfg = null;
+  try { localStorage.removeItem(LIGHT_KEY); } catch (_) {}
+  $('lightUrl').value = ''; $('lightToken').value = '';
+  connectLights();
+});
+connectLights();
+
 sliders.forEach(k => $(k).addEventListener('input', () => {
   if (!NOT_IN_PRESET.includes(k)) document.querySelectorAll('.preset').forEach(b => b.setAttribute('aria-pressed', 'false'));
   apply();
